@@ -22,7 +22,7 @@ export class WebhookDefinitionDto {
   @IsString({ each: true })
   events!: string[];
 
-  @IsUrl()
+  @IsUrl({ require_tld: false })
   url!: string;
 
   @IsOptional()
