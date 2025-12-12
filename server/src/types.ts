@@ -1,10 +1,9 @@
 import { SystemConfig } from 'src/config';
 import { VECTOR_EXTENSIONS } from 'src/constants';
-import { Asset } from 'src/database';
+import { Asset, AssetFile } from 'src/database';
 import { UploadFieldName } from 'src/dtos/asset-media.dto';
 import { AuthDto } from 'src/dtos/auth.dto';
 import {
-  AssetMetadataKey,
   AssetOrder,
   AssetType,
   DatabaseSslMode,
@@ -308,11 +307,6 @@ export interface JobCounts {
   paused: number;
 }
 
-export interface QueueStatus {
-  isActive: boolean;
-  isPaused: boolean;
-}
-
 export type JobItem =
   // Audit
   | { name: JobName.AuditTableCleanup; data?: IBaseJob }
@@ -499,8 +493,8 @@ export type StorageAsset = {
   fileCreatedAt: Date;
   originalPath: string;
   originalFileName: string;
-  sidecarPath: string | null;
   fileSizeInByte: number | null;
+  files: AssetFile[];
 };
 
 export type OnThisDayData = { year: number };
@@ -585,13 +579,4 @@ export interface UserMetadata extends Record<UserMetadataKey, Record<string, any
   [UserMetadataKey.Preferences]: DeepPartial<UserPreferences>;
   [UserMetadataKey.License]: { licenseKey: string; activationKey: string; activatedAt: string };
   [UserMetadataKey.Onboarding]: { isOnboarded: boolean };
-}
-
-export type AssetMetadataItem<T extends keyof AssetMetadata = AssetMetadataKey> = {
-  key: T;
-  value: AssetMetadata[T];
-};
-
-export interface AssetMetadata extends Record<AssetMetadataKey, Record<string, any>> {
-  [AssetMetadataKey.MobileApp]: { iCloudId: string };
 }
