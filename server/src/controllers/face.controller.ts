@@ -1,18 +1,4 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  HttpCode,
-  HttpStatus,
-  Param,
-  ParseFilePipe,
-  Post,
-  Put,
-  Query,
-  UploadedFile,
-  UseInterceptors,
-} from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put, Query, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { Express } from 'express';
@@ -30,7 +16,7 @@ import {
 import { ApiTag, Permission } from 'src/enum';
 import { Auth, Authenticated } from 'src/middleware/auth.guard';
 import { PersonService } from 'src/services/person.service';
-import { FileNotEmptyValidator, UUIDParamDto } from 'src/validation';
+import { UUIDParamDto } from 'src/validation';
 
 @ApiTags(ApiTag.Faces)
 @Controller('faces')
@@ -80,9 +66,11 @@ export class FaceController {
   })
   identifyFaces(
     @Auth() auth: AuthDto,
-    @UploadedFile(new ParseFilePipe({ validators: [new FileNotEmptyValidator(['file'])] }))
-    file: Express.Multer.File,
+    @UploadedFile() file: Express.Multer.File,
   ): Promise<FaceIdentifyResponseDto[]> {
+    if (!file) {
+      throw new BadRequestException('file is required');
+    }
     return this.service.identifyFaces(auth, file);
   }
 
