@@ -1,5 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Express } from 'express';
 import { Insertable, Updateable } from 'kysely';
+import { unlink } from 'node:fs/promises';
 import { JOBS_ASSET_PAGINATION_SIZE } from 'src/constants';
 import { Person } from 'src/database';
 import { Chunked, OnJob } from 'src/decorators';
@@ -11,6 +13,7 @@ import {
   AssetFaceResponseDto,
   AssetFaceUpdateDto,
   FaceDto,
+  FaceIdentifyResponseDto,
   mapFaces,
   mapPerson,
   MergePersonDto,
@@ -127,6 +130,61 @@ export class PersonService extends BaseService {
     await this.requireAccess({ auth, permission: Permission.AssetRead, ids: [dto.id] });
     const faces = await this.personRepository.getFaces(dto.id);
     return faces.map((asset) => mapFaces(asset, auth));
+  }
+
+  async identifyFaces(auth: AuthDto, file: Express.Multer.File): Promise<FaceIdentifyResponseDto[]> {
+    const { machineLearning } = await this.getConfig({ withCache: true });
+    if (!isFacialRecognitionEnabled(machineLearning)) {
+      throw new BadRequestException('Facial recognition is not enabled');
+    }
+
+    const cleanup = async () => {
+      if (file?.path) {
+        await unlink(file.path).catch((error) => this.logger.warn(`Failed to clean up identify file: ${error}`));
+      }
+    };
+
+    try {
+      const { faces, imageHeight, imageWidth } = await this.machineLearningRepository.detectFaces(
+        file.path,
+        machineLearning.facialRecognition,
+      );
+
+      const responses: FaceIdentifyResponseDto[] = [];
+      for (const face of faces) {
+        const matches = await this.searchRepository.searchFaces({
+          userIds: [auth.user.id],
+          embedding: face.embedding,
+          numResults: machineLearning.facialRecognition.minFaces,
+          maxDistance: machineLearning.facialRecognition.maxDistance,
+          hasPerson: true,
+        });
+
+        const bestMatch = matches[0];
+        let person: PersonResponseDto | null = null;
+        if (bestMatch?.personId) {
+          const found = await this.personRepository.getById(bestMatch.personId);
+          if (found && found.ownerId === auth.user.id) {
+            person = mapPerson(found);
+          }
+        }
+
+        responses.push({
+          imageHeight,
+          imageWidth,
+          boundingBoxX1: face.boundingBox.x1,
+          boundingBoxX2: face.boundingBox.x2,
+          boundingBoxY1: face.boundingBox.y1,
+          boundingBoxY2: face.boundingBox.y2,
+          person,
+          distance: bestMatch?.distance,
+        });
+      }
+
+      return responses;
+    } finally {
+      await cleanup();
+    }
   }
 
   async createNewFeaturePhoto(changeFeaturePhoto: string[]) {
