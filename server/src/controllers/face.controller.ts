@@ -9,9 +9,9 @@ import {
   AssetFaceCreateDto,
   AssetFaceDeleteDto,
   AssetFaceResponseDto,
+  AssetFaceWithoutPersonResponseDto,
   FaceDto,
-  FaceIdentifyResponseDto,
-  PersonResponseDto,
+  PersonResponseDto
 } from 'src/dtos/person.dto';
 import { ApiTag, Permission } from 'src/enum';
 import { Auth, Authenticated } from 'src/middleware/auth.guard';
@@ -67,7 +67,7 @@ export class FaceController {
   identifyFaces(
     @Auth() auth: AuthDto,
     @UploadedFile() file: Express.Multer.File,
-  ): Promise<FaceIdentifyResponseDto[]> {
+  ): Promise<(AssetFaceWithoutPersonResponseDto & {personId?: string})[]> {
     if (!file) {
       throw new BadRequestException('file is required');
     }

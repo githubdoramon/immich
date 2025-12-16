@@ -12,8 +12,8 @@ import {
   AssetFaceDeleteDto,
   AssetFaceResponseDto,
   AssetFaceUpdateDto,
+  AssetFaceWithoutPersonResponseDto,
   FaceDto,
-  FaceIdentifyResponseDto,
   mapFaces,
   mapPerson,
   MergePersonDto,
@@ -23,7 +23,7 @@ import {
   PersonResponseDto,
   PersonSearchDto,
   PersonStatisticsResponseDto,
-  PersonUpdateDto,
+  PersonUpdateDto
 } from 'src/dtos/person.dto';
 import {
   AssetVisibility,
@@ -132,7 +132,7 @@ export class PersonService extends BaseService {
     return faces.map((asset) => mapFaces(asset, auth));
   }
 
-  async identifyFaces(auth: AuthDto, file: Express.Multer.File): Promise<FaceIdentifyResponseDto[]> {
+  async identifyFaces(auth: AuthDto, file: Express.Multer.File): Promise<(AssetFaceWithoutPersonResponseDto & {personId?: string})[]> {
     const { machineLearning } = await this.getConfig({ withCache: true });
     if (!isFacialRecognitionEnabled(machineLearning)) {
       throw new BadRequestException('Facial recognition is not enabled');
@@ -150,7 +150,7 @@ export class PersonService extends BaseService {
         machineLearning.facialRecognition,
       );
 
-      const responses: FaceIdentifyResponseDto[] = [];
+      const responses: (AssetFaceWithoutPersonResponseDto & {personId?: string})[] = [];
       for (const face of faces) {
         const matches = await this.searchRepository.searchFaces({
           userIds: [auth.user.id],
@@ -170,14 +170,14 @@ export class PersonService extends BaseService {
         }
 
         responses.push({
+          id: "not-used",
           imageHeight,
           imageWidth,
           boundingBoxX1: face.boundingBox.x1,
           boundingBoxX2: face.boundingBox.x2,
           boundingBoxY1: face.boundingBox.y1,
           boundingBoxY2: face.boundingBox.y2,
-          person,
-          distance: bestMatch?.distance,
+          personId: bestMatch?.personId
         });
       }
 

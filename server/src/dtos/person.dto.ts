@@ -10,13 +10,13 @@ import { SourceType } from 'src/enum';
 import { AssetFaceTable } from 'src/schema/tables/asset-face.table';
 import { asDateString } from 'src/utils/date';
 import {
-    IsDateStringFormat,
-    MaxDateString,
-    Optional,
-    ValidateBoolean,
-    ValidateEnum,
-    ValidateHexColor,
-    ValidateUUID,
+  IsDateStringFormat,
+  MaxDateString,
+  Optional,
+  ValidateBoolean,
+  ValidateEnum,
+  ValidateHexColor,
+  ValidateUUID,
 } from 'src/validation';
 
 export class PersonCreateDto {
@@ -144,31 +144,6 @@ export class AssetFaceWithoutPersonResponseDto {
 
 export class AssetFaceResponseDto extends AssetFaceWithoutPersonResponseDto {
   person!: PersonResponseDto | null;
-}
-
-export class FaceIdentifyResponseDto {
-  @ApiProperty({ type: 'integer' })
-  imageHeight!: number;
-
-  @ApiProperty({ type: 'integer' })
-  imageWidth!: number;
-
-  @ApiProperty({ type: 'integer' })
-  boundingBoxX1!: number;
-
-  @ApiProperty({ type: 'integer' })
-  boundingBoxX2!: number;
-
-  @ApiProperty({ type: 'integer' })
-  boundingBoxY1!: number;
-
-  @ApiProperty({ type: 'integer' })
-  boundingBoxY2!: number;
-
-  @ApiPropertyOptional({ type: 'number' })
-  distance?: number;
-
-  person?: PersonResponseDto | null;
 }
 
 export class AssetFaceUpdateDto {
