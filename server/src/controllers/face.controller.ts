@@ -9,7 +9,7 @@ import {
   AssetFaceCreateDto,
   AssetFaceDeleteDto,
   AssetFaceResponseDto,
-  AssetFaceWithoutPersonResponseDto,
+  AssetFaceWithoutPersonResponseDtoWithPersonId,
   FaceDto,
   PersonResponseDto
 } from 'src/dtos/person.dto';
@@ -67,7 +67,7 @@ export class FaceController {
   identifyFaces(
     @Auth() auth: AuthDto,
     @UploadedFile() file: Express.Multer.File,
-  ): Promise<(AssetFaceWithoutPersonResponseDto & {personId?: string})[]> {
+  ): Promise<AssetFaceWithoutPersonResponseDtoWithPersonId[]> {
     if (!file) {
       throw new BadRequestException('file is required');
     }

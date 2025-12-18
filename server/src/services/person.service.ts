@@ -12,7 +12,7 @@ import {
   AssetFaceDeleteDto,
   AssetFaceResponseDto,
   AssetFaceUpdateDto,
-  AssetFaceWithoutPersonResponseDto,
+  AssetFaceWithoutPersonResponseDtoWithPersonId,
   FaceDto,
   mapFaces,
   mapPerson,
@@ -132,7 +132,7 @@ export class PersonService extends BaseService {
     return faces.map((asset) => mapFaces(asset, auth));
   }
 
-  async identifyFaces(auth: AuthDto, file: Express.Multer.File): Promise<(AssetFaceWithoutPersonResponseDto & {personId?: string})[]> {
+  async identifyFaces(auth: AuthDto, file: Express.Multer.File): Promise<AssetFaceWithoutPersonResponseDtoWithPersonId[]> {
     const { machineLearning } = await this.getConfig({ withCache: true });
     if (!isFacialRecognitionEnabled(machineLearning)) {
       throw new BadRequestException('Facial recognition is not enabled');
@@ -150,7 +150,7 @@ export class PersonService extends BaseService {
         machineLearning.facialRecognition,
       );
 
-      const responses: (AssetFaceWithoutPersonResponseDto & {personId?: string})[] = [];
+      const responses: AssetFaceWithoutPersonResponseDtoWithPersonId[] = [];
       for (const face of faces) {
         const matches = await this.searchRepository.searchFaces({
           userIds: [auth.user.id],

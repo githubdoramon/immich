@@ -142,6 +142,10 @@ export class AssetFaceWithoutPersonResponseDto {
   sourceType?: SourceType;
 }
 
+export class AssetFaceWithoutPersonResponseDtoWithPersonId extends AssetFaceWithoutPersonResponseDto {
+  personId?: string | null;
+}
+
 export class AssetFaceResponseDto extends AssetFaceWithoutPersonResponseDto {
   person!: PersonResponseDto | null;
 }
