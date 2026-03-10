@@ -1,30 +1,25 @@
 import {
   Activity,
+  Album,
   ApiKey,
   AuthApiKey,
   AuthSharedLink,
   AuthUser,
+  Exif,
   Library,
-  Memory,
   Partner,
+  Person,
   Session,
+  Tag,
   User,
   UserAdmin,
 } from 'src/database';
-import { MapAsset } from 'src/dtos/asset-response.dto';
 import { AuthDto } from 'src/dtos/auth.dto';
+import { AssetEditAction, AssetEditActionItem, MirrorAxis } from 'src/dtos/editing.dto';
 import { QueueStatisticsDto } from 'src/dtos/queue.dto';
-import {
-  AssetFileType,
-  AssetStatus,
-  AssetType,
-  AssetVisibility,
-  MemoryType,
-  Permission,
-  UserMetadataKey,
-  UserStatus,
-} from 'src/enum';
-import { OnThisDayData, UserMetadataItem } from 'src/types';
+import { AssetFileType, AssetOrder, Permission, UserMetadataKey, UserStatus } from 'src/enum';
+import { UserMetadataItem } from 'src/types';
+import { UserFactory } from 'test/factories/user.factory';
 import { v4, v7 } from 'uuid';
 
 export const newUuid = () => v4();
@@ -113,9 +108,13 @@ const authUserFactory = (authUser: Partial<AuthUser> = {}) => {
   return { id, isAdmin, name, email, quotaUsageInBytes, quotaSizeInBytes };
 };
 
-const partnerFactory = (partner: Partial<Partner> = {}) => {
-  const sharedBy = userFactory(partner.sharedBy || {});
-  const sharedWith = userFactory(partner.sharedWith || {});
+const partnerFactory = ({
+  sharedBy: sharedByProvided,
+  sharedWith: sharedWithProvided,
+  ...partner
+}: Partial<Partner> = {}) => {
+  const sharedBy = UserFactory.create(sharedByProvided ?? {});
+  const sharedWith = UserFactory.create(sharedWithProvided ?? {});
 
   return {
     sharedById: sharedBy.id,
@@ -138,7 +137,7 @@ const sessionFactory = (session: Partial<Session> = {}) => ({
   updateId: newUuidV7(),
   deviceOS: 'android',
   deviceType: 'mobile',
-  token: 'abc123',
+  token: Buffer.from('abc123'),
   parentId: null,
   expiresAt: null,
   userId: newUuid(),
@@ -156,12 +155,6 @@ const queueStatisticsFactory = (dto?: Partial<QueueStatisticsDto>) => ({
   waiting: 0,
   paused: 0,
   ...dto,
-});
-
-const stackFactory = () => ({
-  id: newUuid(),
-  ownerId: newUuid(),
-  primaryAssetId: newUuid(),
 });
 
 const userFactory = (user: Partial<User> = {}) => ({
@@ -221,37 +214,6 @@ const userAdminFactory = (user: Partial<UserAdmin> = {}) => {
   };
 };
 
-const assetFactory = (asset: Partial<MapAsset> = {}) => ({
-  id: newUuid(),
-  createdAt: newDate(),
-  updatedAt: newDate(),
-  deletedAt: null,
-  updateId: newUuidV7(),
-  status: AssetStatus.Active,
-  checksum: newSha1(),
-  deviceAssetId: '',
-  deviceId: '',
-  duplicateId: null,
-  duration: null,
-  encodedVideoPath: null,
-  fileCreatedAt: newDate(),
-  fileModifiedAt: newDate(),
-  isExternal: false,
-  isFavorite: false,
-  isOffline: false,
-  libraryId: null,
-  livePhotoVideoId: null,
-  localDateTime: newDate(),
-  originalFileName: 'IMG_123.jpg',
-  originalPath: `/data/12/34/IMG_123.jpg`,
-  ownerId: newUuid(),
-  stackId: null,
-  thumbhash: null,
-  type: AssetType.Image,
-  visibility: AssetVisibility.Timeline,
-  ...asset,
-});
-
 const activityFactory = (activity: Partial<Activity> = {}) => {
   const userId = activity.userId || newUuid();
   return {
@@ -259,7 +221,7 @@ const activityFactory = (activity: Partial<Activity> = {}) => {
     comment: null,
     isLiked: false,
     userId,
-    user: userFactory({ id: userId }),
+    user: UserFactory.create({ id: userId }),
     assetId: newUuid(),
     albumId: newUuid(),
     createdAt: newDate(),
@@ -295,42 +257,36 @@ const libraryFactory = (library: Partial<Library> = {}) => ({
   ...library,
 });
 
-const memoryFactory = (memory: Partial<Memory> = {}) => ({
-  id: newUuid(),
-  createdAt: newDate(),
-  updatedAt: newDate(),
-  updateId: newUuidV7(),
-  deletedAt: null,
-  ownerId: newUuid(),
-  type: MemoryType.OnThisDay,
-  data: { year: 2024 } as OnThisDayData,
-  isSaved: false,
-  memoryAt: newDate(),
-  seenAt: null,
-  showAt: newDate(),
-  hideAt: newDate(),
-  assets: [],
-  ...memory,
-});
-
 const versionHistoryFactory = () => ({
   id: newUuid(),
   createdAt: newDate(),
   version: '1.123.45',
 });
 
-const assetSidecarWriteFactory = () => ({
-  id: newUuid(),
-  originalPath: '/path/to/original-path.jpg.xmp',
-  tags: [],
-  files: [
-    {
-      id: newUuid(),
-      path: '/path/to/original-path.jpg.xmp',
-      type: AssetFileType.Sidecar,
-    },
-  ],
-});
+const assetSidecarWriteFactory = () => {
+  const id = newUuid();
+  return {
+    id,
+    originalPath: '/path/to/original-path.jpg.xmp',
+    tags: [],
+    files: [
+      {
+        id: newUuid(),
+        path: '/path/to/original-path.jpg.xmp',
+        type: AssetFileType.Sidecar,
+        isEdited: false,
+      },
+    ],
+    exifInfo: {
+      assetId: id,
+      description: 'this is a description',
+      latitude: 12,
+      longitude: 12,
+      dateTimeOriginal: '2023-11-22T04:56:12.196Z',
+      timeZone: 'UTC-6',
+    } as unknown as Exif,
+  };
+};
 
 const assetOcrFactory = (
   ocr: {
@@ -347,6 +303,7 @@ const assetOcrFactory = (
     boxScore?: number;
     textScore?: number;
     text?: string;
+    isVisible?: boolean;
   } = {},
 ) => ({
   id: newUuid(),
@@ -362,30 +319,94 @@ const assetOcrFactory = (
   boxScore: 0.95,
   textScore: 0.92,
   text: 'Sample Text',
+  isVisible: true,
   ...ocr,
+});
+
+const tagFactory = (tag: Partial<Tag>): Tag => ({
+  id: newUuid(),
+  color: null,
+  createdAt: newDate(),
+  parentId: null,
+  updatedAt: newDate(),
+  value: `tag-${newUuid()}`,
+  ...tag,
+});
+
+const assetEditFactory = (edit?: Partial<AssetEditActionItem>): AssetEditActionItem => {
+  switch (edit?.action) {
+    case AssetEditAction.Crop: {
+      return { action: AssetEditAction.Crop, parameters: { height: 42, width: 42, x: 0, y: 10 }, ...edit };
+    }
+    case AssetEditAction.Mirror: {
+      return { action: AssetEditAction.Mirror, parameters: { axis: MirrorAxis.Horizontal }, ...edit };
+    }
+    case AssetEditAction.Rotate: {
+      return { action: AssetEditAction.Rotate, parameters: { angle: 90 }, ...edit };
+    }
+    default: {
+      return { action: AssetEditAction.Mirror, parameters: { axis: MirrorAxis.Vertical } };
+    }
+  }
+};
+
+const personFactory = (person?: Partial<Person>): Person => ({
+  birthDate: newDate(),
+  color: null,
+  createdAt: newDate(),
+  faceAssetId: null,
+  id: newUuid(),
+  isFavorite: false,
+  isHidden: false,
+  name: 'person',
+  ownerId: newUuid(),
+  thumbnailPath: '/path/to/person/thumbnail.jpg',
+  updatedAt: newDate(),
+  updateId: newUuidV7(),
+  ...person,
+});
+
+const albumFactory = (album?: Partial<Omit<Album, 'assets'>>) => ({
+  albumName: 'My Album',
+  albumThumbnailAssetId: null,
+  albumUsers: [],
+  assets: [],
+  createdAt: newDate(),
+  deletedAt: null,
+  description: 'Album description',
+  id: newUuid(),
+  isActivityEnabled: false,
+  order: AssetOrder.Desc,
+  ownerId: newUuid(),
+  sharedLinks: [],
+  updatedAt: newDate(),
+  updateId: newUuidV7(),
+  ...album,
 });
 
 export const factory = {
   activity: activityFactory,
   apiKey: apiKeyFactory,
-  asset: assetFactory,
   assetOcr: assetOcrFactory,
   auth: authFactory,
   authApiKey: authApiKeyFactory,
   authUser: authUserFactory,
   library: libraryFactory,
-  memory: memoryFactory,
   partner: partnerFactory,
   queueStatistics: queueStatisticsFactory,
   session: sessionFactory,
-  stack: stackFactory,
   user: userFactory,
   userAdmin: userAdminFactory,
   versionHistory: versionHistoryFactory,
   jobAssets: {
     sidecarWrite: assetSidecarWriteFactory,
   },
+  person: personFactory,
+  assetEdit: assetEditFactory,
+  tag: tagFactory,
+  album: albumFactory,
   uuid: newUuid,
+  buffer: () => Buffer.from('this is a fake buffer'),
   date: newDate,
   responses: {
     badRequest: (message: any = null) => ({

@@ -1,5 +1,6 @@
 import { VirtualScrollManager } from '$lib/managers/VirtualScrollManager/VirtualScrollManager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 import { GroupInsertionCache } from '$lib/managers/timeline-manager/group-insertion-cache.svelte';
 import { updateIntersectionMonthGroup } from '$lib/managers/timeline-manager/internal/intersection-support.svelte';
 import { updateGeometry } from '$lib/managers/timeline-manager/internal/layout-support.svelte';
@@ -93,6 +94,7 @@ export class TimelineManager extends VirtualScrollManager {
   #updatingIntersections = false;
   #scrollableElement: HTMLElement | undefined = $state();
   #showAssetOwners = new PersistedLocalStorage<boolean>('album-show-asset-owners', false);
+  #unsubscribes: Array<() => void> = [];
 
   get showAssetOwners() {
     return this.#showAssetOwners.current;
@@ -108,6 +110,12 @@ export class TimelineManager extends VirtualScrollManager {
 
   constructor() {
     super();
+
+    this.#unsubscribes.push(
+      eventManager.on({
+        AssetUpdate: (asset: AssetResponseDto) => this.upsertAssets([toTimelineAsset(asset)]),
+      }),
+    );
   }
 
   override get scrollTop(): number {
@@ -250,10 +258,16 @@ export class TimelineManager extends VirtualScrollManager {
     if (this.#options !== TimelineManager.#INIT_OPTIONS && isEqual(this.#options, options)) {
       return;
     }
-    await this.initTask.reset();
-    await this.#init(options);
-    this.updateViewportGeometry(false);
-    this.#createScrubberMonths();
+
+    this.suspendTransitions = true;
+    try {
+      await this.initTask.reset();
+      await this.#init(options);
+      this.updateViewportGeometry(false);
+      this.#createScrubberMonths();
+    } finally {
+      this.suspendTransitions = false;
+    }
   }
 
   async #init(options: TimelineManagerOptions) {
@@ -269,6 +283,11 @@ export class TimelineManager extends VirtualScrollManager {
   public override destroy() {
     this.disconnect();
     this.isInitialized = false;
+
+    for (const unsubscribe of this.#unsubscribes) {
+      unsubscribe();
+    }
+
     super.destroy();
   }
 
@@ -346,7 +365,7 @@ export class TimelineManager extends VirtualScrollManager {
 
   async findMonthGroupForAsset(asset: AssetDescriptor | AssetResponseDto) {
     if (!this.isInitialized) {
-      await this.initTask.waitUntilCompletion();
+      await this.initTask.waitUntilExecution();
     }
 
     const { id } = asset;
@@ -576,7 +595,8 @@ export class TimelineManager extends VirtualScrollManager {
     return (
       isMismatched(this.#options.visibility, asset.visibility) ||
       isMismatched(this.#options.isFavorite, asset.isFavorite) ||
-      isMismatched(this.#options.isTrashed, asset.isTrashed)
+      isMismatched(this.#options.isTrashed, asset.isTrashed) ||
+      (this.#options.assetFilter !== undefined && !this.#options.assetFilter.has(asset.id))
     );
   }
 

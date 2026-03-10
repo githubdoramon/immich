@@ -1,3 +1,4 @@
+import { DatabaseConnectionParams } from '@immich/sql-tools';
 import { RegisterQueueOptions } from '@nestjs/bullmq';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { QueueOptions } from 'bullmq';
@@ -17,10 +18,11 @@ import {
   ImmichHeader,
   ImmichTelemetry,
   ImmichWorker,
+  LogFormat,
   LogLevel,
   QueueName,
 } from 'src/enum';
-import { DatabaseConnectionParams, VectorExtension } from 'src/types';
+import { VectorExtension } from 'src/types';
 import { setDifference } from 'src/utils/set';
 
 export interface EnvData {
@@ -29,6 +31,7 @@ export interface EnvData {
   environment: ImmichEnvironment;
   configFile?: string;
   logLevel?: LogLevel;
+  logFormat?: LogFormat;
 
   buildMetadata: {
     build?: string;
@@ -90,6 +93,10 @@ export interface EnvData {
 
   redis: RedisOptions;
 
+  setup: {
+    allow: boolean;
+  };
+
   telemetry: {
     apiPort: number;
     microservicesPort: number;
@@ -104,8 +111,10 @@ export interface EnvData {
   workers: ImmichWorker[];
 
   plugins: {
-    enabled: boolean;
-    installFolder?: string;
+    external: {
+      allow: boolean;
+      installFolder?: string;
+    };
   };
 
   noColor: boolean;
@@ -176,7 +185,7 @@ const getEnv = (): EnvData => {
     try {
       redisConfig = JSON.parse(Buffer.from(redisUrl.slice(10), 'base64').toString());
     } catch (error) {
-      throw new Error(`Failed to decode redis options: ${error}`);
+      throw new Error('Failed to decode redis options', { cause: error });
     }
   }
 
@@ -227,6 +236,7 @@ const getEnv = (): EnvData => {
     environment,
     configFile: dto.IMMICH_CONFIG_FILE,
     logLevel: dto.IMMICH_LOG_LEVEL,
+    logFormat: dto.IMMICH_LOG_FORMAT || LogFormat.Console,
 
     buildMetadata: {
       build: dto.IMMICH_BUILD,
@@ -313,6 +323,10 @@ const getEnv = (): EnvData => {
       corePlugin: join(buildFolder, 'corePlugin'),
     },
 
+    setup: {
+      allow: dto.IMMICH_ALLOW_SETUP ?? true,
+    },
+
     storage: {
       ignoreMountCheckErrors: !!dto.IMMICH_IGNORE_MOUNT_CHECK_ERRORS,
       mediaLocation: dto.IMMICH_MEDIA_LOCATION,
@@ -327,8 +341,10 @@ const getEnv = (): EnvData => {
     workers,
 
     plugins: {
-      enabled: !!dto.IMMICH_PLUGINS_ENABLED,
-      installFolder: dto.IMMICH_PLUGINS_INSTALL_FOLDER,
+      external: {
+        allow: dto.IMMICH_ALLOW_EXTERNAL_PLUGINS ?? false,
+        installFolder: dto.IMMICH_PLUGINS_INSTALL_FOLDER,
+      },
     },
 
     noColor: !!dto.NO_COLOR,

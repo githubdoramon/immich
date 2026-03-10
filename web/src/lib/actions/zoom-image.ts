@@ -1,48 +1,36 @@
-import { photoZoomState } from '$lib/stores/zoom-image.store';
-import { useZoomImageWheel } from '@zoom-image/svelte';
-import { get } from 'svelte/store';
+import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
+import { createZoomImageWheel } from '@zoom-image/core';
 
 export const zoomImageAction = (node: HTMLElement, options?: { disabled?: boolean }) => {
-  const { createZoomImage, zoomImageState, setZoomImageState } = useZoomImageWheel();
+  const zoomInstance = createZoomImageWheel(node, { maxZoom: 10, initialState: assetViewerManager.zoomState });
 
-  createZoomImage(node, {
-    maxZoom: 10,
-  });
+  const unsubscribes = [
+    assetViewerManager.on({ ZoomChange: (state) => zoomInstance.setState(state) }),
+    zoomInstance.subscribe(({ state }) => assetViewerManager.onZoomChange(state)),
+  ];
 
-  const state = get(photoZoomState);
-  if (state) {
-    setZoomImageState(state);
-  }
-
-  // Store original event handlers so we can prevent them when disabled
-  const wheelHandler = (event: WheelEvent) => {
+  const onInteractionStart = (event: Event) => {
     if (options?.disabled) {
       event.stopImmediatePropagation();
     }
+    assetViewerManager.cancelZoomAnimation();
   };
 
-  const pointerDownHandler = (event: PointerEvent) => {
-    if (options?.disabled) {
-      event.stopImmediatePropagation();
-    }
-  };
+  node.addEventListener('wheel', onInteractionStart, { capture: true });
+  node.addEventListener('pointerdown', onInteractionStart, { capture: true });
 
-  // Add handlers at capture phase with higher priority
-  node.addEventListener('wheel', wheelHandler, { capture: true });
-  node.addEventListener('pointerdown', pointerDownHandler, { capture: true });
-
-  const unsubscribes = [photoZoomState.subscribe(setZoomImageState), zoomImageState.subscribe(photoZoomState.set)];
-
+  node.style.overflow = 'visible';
   return {
     update(newOptions?: { disabled?: boolean }) {
       options = newOptions;
     },
     destroy() {
-      node.removeEventListener('wheel', wheelHandler, { capture: true });
-      node.removeEventListener('pointerdown', pointerDownHandler, { capture: true });
       for (const unsubscribe of unsubscribes) {
         unsubscribe();
       }
+      node.removeEventListener('wheel', onInteractionStart, { capture: true });
+      node.removeEventListener('pointerdown', onInteractionStart, { capture: true });
+      zoomInstance.cleanup();
     },
   };
 };

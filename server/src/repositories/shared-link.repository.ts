@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { Insertable, Kysely, NotNull, sql, Updateable } from 'kysely';
-import { jsonObjectFrom } from 'kysely/helpers/postgres';
+import { Insertable, Kysely, sql, Updateable } from 'kysely';
+import { jsonArrayFrom, jsonObjectFrom } from 'kysely/helpers/postgres';
 import _ from 'lodash';
 import { InjectKysely } from 'nestjs-kysely';
 import { Album, columns } from 'src/database';
@@ -12,6 +12,7 @@ import { SharedLinkTable } from 'src/schema/tables/shared-link.table';
 
 export type SharedLinkSearchOptions = {
   userId: string;
+  id?: string;
   albumId?: string;
 };
 
@@ -118,24 +119,25 @@ export class SharedLinkRepository {
   }
 
   @GenerateSql({ params: [{ userId: DummyValue.UUID, albumId: DummyValue.UUID }] })
-  getAll({ userId, albumId }: SharedLinkSearchOptions) {
+  getAll({ userId, id, albumId }: SharedLinkSearchOptions) {
     return this.db
       .selectFrom('shared_link')
       .selectAll('shared_link')
       .where('shared_link.userId', '=', userId)
-      .leftJoin('shared_link_asset', 'shared_link_asset.sharedLinkId', 'shared_link.id')
-      .leftJoinLateral(
-        (eb) =>
+      .select((eb) =>
+        jsonArrayFrom(
           eb
-            .selectFrom('asset')
-            .select((eb) => eb.fn.jsonAgg('asset').as('assets'))
-            .whereRef('asset.id', '=', 'shared_link_asset.assetId')
+            .selectFrom('shared_link_asset')
+            .whereRef('shared_link.id', '=', 'shared_link_asset.sharedLinkId')
+            .innerJoin('asset', 'asset.id', 'shared_link_asset.assetId')
             .where('asset.deletedAt', 'is', null)
-            .as('assets'),
-        (join) => join.onTrue(),
+            .selectAll('asset')
+            .orderBy('asset.fileCreatedAt', 'asc')
+            .limit(1),
+        )
+          .$castTo<MapAsset[]>()
+          .as('assets'),
       )
-      .select('assets.assets')
-      .$narrowType<{ assets: NotNull }>()
       .leftJoinLateral(
         (eb) =>
           eb
@@ -176,8 +178,8 @@ export class SharedLinkRepository {
       .select((eb) => eb.fn.toJson('album').$castTo<Album | null>().as('album'))
       .where((eb) => eb.or([eb('shared_link.type', '=', SharedLinkType.Individual), eb('album.id', 'is not', null)]))
       .$if(!!albumId, (eb) => eb.where('shared_link.albumId', '=', albumId!))
+      .$if(!!id, (eb) => eb.where('shared_link.id', '=', id!))
       .orderBy('shared_link.createdAt', 'desc')
-      .distinctOn(['shared_link.createdAt'])
       .execute();
   }
 
@@ -258,7 +260,7 @@ export class SharedLinkRepository {
             .selectAll('asset')
             .innerJoinLateral(
               (eb) =>
-                eb.selectFrom('asset_exif').whereRef('asset_exif.assetId', '=', 'asset.id').selectAll().as('exif'),
+                eb.selectFrom('asset_exif').whereRef('asset_exif.assetId', '=', 'asset.id').selectAll().as('exifInfo'),
               (join) => join.onTrue(),
             )
             .as('assets'),
