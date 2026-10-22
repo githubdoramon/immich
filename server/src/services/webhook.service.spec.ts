@@ -1,9 +1,9 @@
-import { ModuleRef } from '@nestjs/core';
+import { ModuleRef, Reflector } from '@nestjs/core';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { IWebhookJob } from 'src/types.js';
-import { JobName, JobStatus, QueueName } from 'src/enum.js';
+import { BootstrapEventPriority, JobName, JobStatus, MetadataKey, QueueName } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -99,6 +99,26 @@ describe(WebhookService.name, () => {
         name: JobName.WebhookDelivery,
         data: expect.objectContaining({ eventName: 'AppBootstrap', payload: null }),
       }),
+    );
+  });
+
+  it('registers ConfigInit subscriptions between job setup and system configuration', async () => {
+    const configPath = join(directory, 'config-init.json');
+    await writeFile(configPath, JSON.stringify({ webhooks: [{ ...target, events: ['ConfigInit'] }] }));
+    vi.stubEnv('IMMICH_WEBHOOKS_CONFIG', configPath);
+    const priority = new Reflector().get<{ priority: number }>(
+      MetadataKey.EventConfig,
+      WebhookService.prototype.onBootstrap,
+    ).priority;
+    expect(priority).toBeGreaterThan(BootstrapEventPriority.JobService);
+    expect(priority).toBeLessThan(BootstrapEventPriority.SystemConfig);
+    events.addListener('AppBootstrap', () => sut.onBootstrap(), { priority });
+    events.addListener('AppBootstrap', () => events.emit('ConfigInit', { newConfig: {} as never }), {
+      priority: BootstrapEventPriority.SystemConfig,
+    });
+    await events.emit('AppBootstrap');
+    expect(mocks.job.queue).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ data: expect.objectContaining({ eventName: 'ConfigInit' }) }),
     );
   });
 

@@ -169,6 +169,7 @@ export interface FaceEmbeddingSearch extends Omit<SearchEmbeddingOptions, 'userI
   clusterGroupId: string;
   ownerId?: string;
   includeLocked?: boolean;
+  excludeDeletedFaces?: boolean;
   hasPerson?: boolean;
   numResults: number;
   maxDistance: number;
@@ -359,6 +360,7 @@ export class SearchRepository {
     clusterGroupId,
     ownerId,
     includeLocked,
+    excludeDeletedFaces,
     embedding,
     numResults,
     maxDistance,
@@ -388,6 +390,7 @@ export class SearchRepository {
             .where('asset.deletedAt', 'is', null)
             .$if(!!ownerId, (qb) => qb.where('asset.ownerId', '=', ownerId!))
             .$if(includeLocked === false, (qb) => qb.where('asset.visibility', '!=', AssetVisibility.Locked))
+            .$if(!!excludeDeletedFaces, (qb) => qb.where('asset_face.deletedAt', 'is', null))
             .$if(!!hasPerson, (qb) => qb.where('asset_face.personGroupId', 'is not', null))
             .$if(!!minBirthDate, (qb) =>
               qb.where((eb) =>

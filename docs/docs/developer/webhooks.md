@@ -92,3 +92,8 @@ Webhook delivery jobs are excluded from job lifecycle subscriptions (`JobRun`,
 `JobStart`, `JobComplete`, `JobSuccess`, `JobError`) so they cannot trigger themselves.
 Failure logs include delivery identifiers but omit headers, destination URLs and
 response bodies. Delivery failures are passed to BullMQ for the configured retry policy.
+
+Queue job inspection exposes only webhook/delivery identifiers, the event name and
+timestamp. Destination URLs, headers and event payloads remain available to the
+worker but are omitted from queue-inspection responses. Startup subscriptions for
+`AppBootstrap` and `ConfigInit` are supported.

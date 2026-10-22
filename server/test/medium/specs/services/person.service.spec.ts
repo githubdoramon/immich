@@ -124,6 +124,45 @@ describe(PersonService.name, () => {
       );
     });
 
+    it('ignores a closer soft-deleted face before choosing the nearest valid candidate', async () => {
+      const { ctx, sut } = setup(await getKyselyDB());
+      const { user } = await ctx.newUser();
+      const { person: removed } = await ctx.newPerson({ ownerId: user.id });
+      const { person: valid } = await ctx.newPerson({ ownerId: user.id });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const { assetFace: deletedFace } = await ctx.newAssetFace({
+        assetId: asset.id,
+        personGroupId: removed.personGroupId,
+        deletedAt: new Date(),
+      });
+      const { assetFace: validFace } = await ctx.newAssetFace({
+        assetId: asset.id,
+        personGroupId: valid.personGroupId,
+      });
+      const vector = Array.from({ length: 512 }, (_, index) => (index === 0 ? 1 : 0));
+      const embedding = JSON.stringify(vector);
+      await ctx.database
+        .insertInto('face_search')
+        .values([
+          { faceId: deletedFace.id, embedding },
+          {
+            faceId: validFace.id,
+            embedding: JSON.stringify(vector.map((value, index) => (index === 1 ? 0.1 : value))),
+          },
+        ])
+        .execute();
+      ctx.getMock(MachineLearningRepository).detectFaces.mockResolvedValue({
+        imageHeight: 200,
+        imageWidth: 100,
+        faces: [{ embedding, score: 0.99, boundingBox: { x1: 10, x2: 50, y1: 20, y2: 60 } }],
+      });
+      ctx.getMock(StorageRepository).unlink.mockResolvedValue();
+      const result = await sut.identifyFaces(factory.auth({ user }), {
+        path: '/tmp/identify-deleted.jpg',
+      } as Express.Multer.File);
+      expect(result[0].personId).toBe(valid.personGroupId);
+    });
+
     it('requires an elevated session to identify a person found only in locked assets', async () => {
       const { ctx, sut } = setup(await getKyselyDB());
       const { user } = await ctx.newUser();

@@ -7,7 +7,7 @@ import type { IWebhookJob, JobItem } from 'src/types.js';
 import { WEBHOOK_DEFAULT_BACKOFF_MS, WEBHOOK_DEFAULT_RETRIES, WEBHOOK_DEFAULT_TIMEOUT_MS } from 'src/constants.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { WebhookConfigSchema, type WebhookDefinitionDto } from 'src/dtos/webhook-config.dto.js';
-import { JobName, JobStatus, QueueName } from 'src/enum.js';
+import { BootstrapEventPriority, JobName, JobStatus, QueueName } from 'src/enum.js';
 import { EmitEvent, EmitHandler, EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -40,7 +40,7 @@ export class WebhookService {
     this.logger.setContext(WebhookService.name);
   }
 
-  @OnEvent({ name: 'AppBootstrap', priority: 100 })
+  @OnEvent({ name: 'AppBootstrap', priority: BootstrapEventPriority.JobService + 1 })
   async onBootstrap(): Promise<void> {
     if (this.initialized) {
       return;

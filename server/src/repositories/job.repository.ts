@@ -250,7 +250,16 @@ export class JobRepository {
     const jobs = await this.getQueue(name).getJobs(dto.status ?? Object.values(QueueJobStatus), 0, 1000);
     return jobs.map((job) => {
       const { id, name, timestamp, data } = job;
-      return { id, name: name as JobName, timestamp, data };
+      const visibleData =
+        name === JobName.WebhookDelivery
+          ? {
+              deliveryId: data.deliveryId,
+              eventName: data.eventName,
+              timestamp: data.timestamp,
+              webhookId: data.webhook.id,
+            }
+          : data;
+      return { id, name: name as JobName, timestamp, data: visibleData };
     });
   }
 

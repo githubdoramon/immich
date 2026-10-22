@@ -183,6 +183,7 @@ export class PersonService extends BaseService {
           clusterGroupId: user.clusterGroupId,
           ownerId: auth.user.id,
           includeLocked: auth.session?.hasElevatedPermission ?? false,
+          excludeDeletedFaces: true,
           embedding: face.embedding,
           numResults: 1,
           maxDistance: machineLearning.facialRecognition.maxDistance,

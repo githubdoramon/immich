@@ -9,7 +9,7 @@ import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 
 describe('JobRepository queue options', () => {
-  const queue = { addBulk: vi.fn().mockResolvedValue([]), add: vi.fn().mockResolvedValue({}) };
+  const queue = { addBulk: vi.fn().mockResolvedValue([]), add: vi.fn().mockResolvedValue({}), getJobs: vi.fn() };
   let sut: JobRepository;
 
   beforeEach(() => {
@@ -66,6 +66,36 @@ describe('JobRepository queue options', () => {
       },
     ]);
     expect(queue.add).not.toHaveBeenCalled();
+  });
+
+  it('redacts webhook secrets in queue inspection without modifying worker data', async () => {
+    const data = {
+      webhook: {
+        id: 'people',
+        url: 'https://user:url-secret@automation/hooks',
+        headers: { Authorization: 'Bearer header-secret' },
+      },
+      payload: { password: 'payload-secret' },
+      eventName: 'PersonCreate',
+      timestamp: 'time',
+      deliveryId: 'delivery-id',
+    };
+    queue.getJobs.mockResolvedValue([
+      { id: '1', name: JobName.WebhookDelivery, timestamp: 1000, data },
+      { id: '2', name: JobName.PersonCleanup, timestamp: 1000, data: { id: 'ordinary-data' } },
+    ]);
+    const jobs = await sut.searchJobs(QueueName.BackgroundTask, {});
+    expect(jobs[0].data).toEqual({
+      webhookId: 'people',
+      eventName: 'PersonCreate',
+      timestamp: 'time',
+      deliveryId: 'delivery-id',
+    });
+    expect(jobs[1].data).toEqual({ id: 'ordinary-data' });
+    for (const secret of ['url-secret', 'header-secret', 'payload-secret']) {
+      expect(JSON.stringify(jobs)).not.toContain(secret);
+    }
+    expect(data.webhook.headers.Authorization).toBe('Bearer header-secret');
   });
 
   it('retains the individual add path for deduplicated jobs', async () => {
