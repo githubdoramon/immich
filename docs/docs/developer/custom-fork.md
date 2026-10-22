@@ -29,6 +29,14 @@ database migrations, API clients, web, mobile, CLI and machine learning advance 
 The old branch retained the identification controller but had lost its service
 implementation during an earlier integration. This upgrade restores it.
 
+## Image CI
+
+The fork's only active GitHub Actions workflow builds the server and CPU ML images
+for `linux/amd64` and publishes them to AWS ECR on pushes to `main`. See the
+[workflow setup](https://github.com/githubdoramon/immich/blob/main/.github/workflows/README.md)
+for AWS secrets, repository names, tags and deployment references. Upstream
+workflows are preserved in `.github/upstream-workflows` and do not run.
+
 ## Person identity compatibility
 
 Upstream now identifies a person by `(ownerId, personGroupId)`. Existing IDs are
@@ -69,7 +77,7 @@ do not establish live inference or production delivery.
 
 ## Future integrations
 
-Merge the selected upstream release into a branch from `custom`, resolve changes
+Merge the selected upstream release into a branch from `main`, resolve changes
 to these extensions using the new upstream APIs, then inspect `git diff <tag>` to
 keep the custom surface small. Run server type checking, lint, formatting, unit
 and relevant database integration tests. Rebuild the SDK and plugin SDK before
