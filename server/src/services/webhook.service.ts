@@ -49,6 +49,12 @@ export class WebhookService {
     await this.loadConfiguration();
     this.registerListeners();
     this.initialized = true;
+    // Bootstrap listeners are registered during the event already being dispatched.
+    for (const webhook of this.webhooks) {
+      if (webhook.events.includes('AppBootstrap')) {
+        await this.queueDelivery(webhook, 'AppBootstrap', []);
+      }
+    }
   }
 
   @OnJob({ name: JobName.WebhookDelivery, queue: QueueName.BackgroundTask })
@@ -75,6 +81,7 @@ export class WebhookService {
       });
 
       status = response.status;
+      await response.body?.cancel();
       if (!response.ok) {
         throw new Error(`Webhook ${webhook.id} responded with ${response.status}`);
       }

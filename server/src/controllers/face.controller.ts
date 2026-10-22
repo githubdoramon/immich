@@ -61,7 +61,9 @@ export class FaceController {
 
   @Post('identify')
   @Authenticated({ permission: Permission.FaceRead })
-  @UseInterceptors(FileInterceptor('file', { dest: tmpdir(), limits: { fileSize: 20 * 1024 * 1024, files: 1 } }))
+  @UseInterceptors(
+    FileInterceptor('file', { dest: tmpdir(), limits: { fileSize: 20 * 1024 * 1024, files: 1, fields: 0, parts: 1 } }),
+  )
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {

@@ -70,6 +70,26 @@ describe('Custom face identification route', () => {
     expect(service.identifyFaces).not.toHaveBeenCalled();
   });
 
+  it('rejects multipart text fields', async () => {
+    const { status, body } = await request(ctx.getHttpServer())
+      .post('/faces/identify')
+      .field('unexpected', 'value')
+      .attach('file', Buffer.from('image'), 'face.jpg');
+    expect(status).toBe(400);
+    expect(body.message).toBe('Too many fields');
+    expect(service.identifyFaces).not.toHaveBeenCalled();
+  });
+
+  it('rejects additional file parts', async () => {
+    const { status, body } = await request(ctx.getHttpServer())
+      .post('/faces/identify')
+      .attach('file', Buffer.from('image'), 'first.jpg')
+      .attach('file', Buffer.from('image'), 'second.jpg');
+    expect(status).toBe(400);
+    expect(body.message).toMatch(/Too many parts|Too many files/);
+    expect(service.identifyFaces).not.toHaveBeenCalled();
+  });
+
   it('rejects files larger than 20 MiB', async () => {
     const { status } = await request(ctx.getHttpServer())
       .post('/faces/identify')

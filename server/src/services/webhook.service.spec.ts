@@ -86,6 +86,22 @@ describe(WebhookService.name, () => {
     expect(mocks.job.queue).toHaveBeenCalledTimes(1);
   });
 
+  it('delivers startup subscriptions once without revisiting bootstrap during dynamic registration', async () => {
+    const configPath = join(directory, 'bootstrap.json');
+    await writeFile(configPath, JSON.stringify({ webhooks: [{ ...target, events: ['AppBootstrap'] }] }));
+    vi.stubEnv('IMMICH_WEBHOOKS_CONFIG', configPath);
+    const bootstrap = vi.spyOn(sut, 'onBootstrap');
+    events.addListener('AppBootstrap', () => sut.onBootstrap(), { priority: 100 });
+    await events.emit('AppBootstrap');
+    expect(bootstrap).toHaveBeenCalledTimes(1);
+    expect(mocks.job.queue).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        name: JobName.WebhookDelivery,
+        data: expect.objectContaining({ eventName: 'AppBootstrap', payload: null }),
+      }),
+    );
+  });
+
   it('filters server-originated events unless explicitly enabled', async () => {
     await configure([target, { ...target, id: 'including-server', includeServerEvents: true }]);
     const person = PersonFactory.create();
@@ -175,6 +191,19 @@ describe(WebhookService.name, () => {
   it('throws on non-success responses so BullMQ retries the delivery', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('Unavailable', { status: 503 })));
     await expect(sut.handleWebhookDelivery(job())).rejects.toThrow('503');
+  });
+
+  it.each([200, 503])('cancels unused response bodies for HTTP %s', async (status) => {
+    const cancel = vi.fn();
+    const response = new Response(new ReadableStream({ cancel }), { status });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response));
+    const result = sut.handleWebhookDelivery(job());
+    if (status === 200) {
+      await expect(result).resolves.toBe(JobStatus.Success);
+    } else {
+      await expect(result).rejects.toThrow('503');
+    }
+    expect(cancel).toHaveBeenCalledTimes(1);
   });
 
   it('sanitizes errors from the HTTP client before job failure logging', async () => {

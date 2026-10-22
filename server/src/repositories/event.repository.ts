@@ -254,7 +254,7 @@ export class EventRepository {
   }
 
   async onEvent<T extends EmitEvent>(event: { name: T; args: ArgsOf<T>; server: boolean }): Promise<void> {
-    const handlers = this.emitHandlers[event.name] || [];
+    const handlers = [...(this.emitHandlers[event.name] ?? [])];
     for (const { handler, server } of handlers) {
       // exclude handlers that ignore server events
       if (!server && event.server) {
