@@ -1,16 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import { ModuleRef, Reflector } from '@nestjs/core';
-import { ClassConstructor } from 'class-transformer';
-import _ from 'lodash';
+import { orderBy } from 'lodash-es';
 import { Socket } from 'socket.io';
-import { SystemConfig } from 'src/config';
-import { Asset, Person } from 'src/database';
-import { EventConfig } from 'src/decorators';
-import { AuthDto } from 'src/dtos/auth.dto';
-import { ImmichWorker, JobStatus, MetadataKey, QueueName, UserAvatarColor, UserStatus } from 'src/enum';
-import { ConfigRepository } from 'src/repositories/config.repository';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { JobItem, JobSource } from 'src/types';
+import type { Selectable } from 'kysely';
+import type { PersonTable } from 'src/schema/tables/person.table.js';
+import type { JobItem, JobSource, UploadFile } from 'src/types.js';
+import { Asset } from 'src/database.js';
+import { EventConfig } from 'src/decorators.js';
+import { AuthDto } from 'src/dtos/auth.dto.js';
+import { SystemConfig } from 'src/dtos/config.dto.js';
+import { ImmichWorker, JobStatus, MetadataKey, QueueName, UserAvatarColor, UserStatus } from 'src/enum.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 
 type EmitHandlers = Partial<{ [T in EmitEvent]: Array<Item<T>> }>;
 
@@ -39,12 +40,15 @@ type EventMap = {
   ConfigValidate: [{ newConfig: SystemConfig; oldConfig: SystemConfig }];
 
   // album events
-  AlbumUpdate: [{ id: string; recipientId: string }];
-  AlbumInvite: [{ id: string; userId: string }];
+  AlbumUpdate: [{ id: string; userIds: string[]; recipientIds: string[] }];
+  AlbumInvite: [{ id: string; userId: string; senderName: string }];
+
+  // cluster group events
+  ClusterGroupRequest: [{ clusterGroupId: string; userId: string; senderName: string }];
 
   // asset events
-  AssetCreate: [{ asset: Asset }];
-  AssetTag: [{ assetId: string }];
+  AssetCreate: [{ asset: Pick<Asset, 'id' | 'ownerId'>; file?: UploadFile }];
+  AssetTag: [{ assetId: string; userId: string }];
   AssetUntag: [{ assetId: string }];
   AssetHide: [{ assetId: string; userId: string }];
   AssetShow: [{ assetId: string; userId: string }];
@@ -84,7 +88,7 @@ type EventMap = {
 
   // person events
   PersonCreate: [PersonEvent];
-  PersonUpdate: [PersonUpdateEvent];
+  PersonUpdate: [PersonEvent & { previous: Selectable<PersonTable> }];
   PersonDelete: [PersonEvent];
 
   // user events
@@ -97,6 +101,14 @@ type EventMap = {
   UserRestore: [UserEvent];
 
   AuthChangePassword: [{ userId: string; currentSessionId?: string; invalidateSessions?: boolean }];
+
+  // hls streaming events
+  HlsSegmentRequest: [{ sessionId: string; assetId: string; variantIndex: number; segmentIndex: number }];
+  HlsSegmentResult: [{ sessionId: string; variantIndex: number; segmentIndex: number; error?: string }];
+  HlsHeartbeat: [{ sessionId: string; variantIndex?: number; segmentIndex?: number }];
+  HlsSessionRequest: [{ sessionId: string; assetId: string; ownerId: string }];
+  HlsSessionResult: [{ sessionId: string; error?: string }];
+  HlsSessionEnd: [{ sessionId: string }];
 
   // websocket events
   WebsocketConnect: [{ userId: string }];
@@ -113,14 +125,7 @@ type QueueStartEvent = {
   name: QueueName;
 };
 
-type PersonEvent = {
-  person: Person;
-  actorId?: string;
-};
-
-type PersonUpdateEvent = PersonEvent & {
-  previous: Person;
-};
+type PersonEvent = { person: Selectable<PersonTable>; actorId?: string };
 
 type UserEvent = {
   name: string;
@@ -134,7 +139,7 @@ type UserEvent = {
   isAdmin: boolean;
   shouldChangePassword: boolean;
   avatarColor: UserAvatarColor | null;
-  oauthId: string;
+  oauthId: string | null;
   storageLabel: string | null;
   quotaSizeInBytes: number | null;
   quotaUsageInBytes: number;
@@ -166,7 +171,7 @@ export class EventRepository {
     this.logger.setContext(EventRepository.name);
   }
 
-  setup({ services }: { services: ClassConstructor<unknown>[] }) {
+  setup({ services }: { services: (new (...args: any[]) => unknown)[] }) {
     const reflector = this.moduleRef.get(Reflector, { strict: false });
     const items: Item<EmitEvent>[] = [];
     const worker = this.configRepository.getWorker();
@@ -209,7 +214,7 @@ export class EventRepository {
       }
     }
 
-    const handlers = _.orderBy(items, ['priority'], ['asc']);
+    const handlers = orderBy(items, ['priority'], ['asc']);
 
     // register by priority
     for (const handler of handlers) {

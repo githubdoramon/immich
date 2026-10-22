@@ -1,14 +1,13 @@
 <script lang="ts">
-  import { eventManager } from '$lib/managers/event-manager.svelte';
-  import { tagAssets } from '$lib/utils/asset-utils';
+  import { handleTagAssets } from '$lib/services/asset.service';
   import { getAllTags, upsertTags, type TagResponseDto } from '@immich/sdk';
   import { FormModal } from '@immich/ui';
   import { mdiTag } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import { SvelteSet } from 'svelte/reactivity';
-  import Combobox, { type ComboBoxOption } from '../components/shared-components/combobox.svelte';
-  import TagPill from '../components/shared-components/tag-pill.svelte';
+  import Combobox, { type ComboBoxOption } from '../components/shared-components/Combobox.svelte';
+  import TagPill from '../components/shared-components/TagPill.svelte';
 
   interface Props {
     onClose: (updated?: boolean) => void;
@@ -32,9 +31,9 @@
       return;
     }
 
-    const updatedIds = await tagAssets({ tagIds: [...selectedIds], assetIds, showNotification: false });
-    eventManager.emit('AssetsTag', updatedIds);
-    onClose(true);
+    if (await handleTagAssets(assetIds, [...selectedIds])) {
+      onClose(true);
+    }
   };
 
   const handleSelect = async (option?: ComboBoxOption) => {
@@ -78,7 +77,7 @@
     />
   </div>
 
-  <section class="flex flex-wrap pt-2 gap-1">
+  <section class="flex flex-wrap gap-1 pt-2">
     {#each selectedIds as tagId (tagId)}
       {@const tag = tagMap[tagId]}
       {#if tag}

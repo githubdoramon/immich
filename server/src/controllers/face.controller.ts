@@ -1,22 +1,35 @@
-import { BadRequestException, Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put, Query, UploadedFile, UseInterceptors } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Put,
+  Query,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
-import { Express } from 'express';
 import { tmpdir } from 'node:os';
-import { Endpoint, HistoryBuilder } from 'src/decorators';
-import { AuthDto } from 'src/dtos/auth.dto';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   AssetFaceCreateDto,
   AssetFaceDeleteDto,
   AssetFaceResponseDto,
   AssetFaceWithoutPersonResponseDtoWithPersonId,
   FaceDto,
-  PersonResponseDto
-} from 'src/dtos/person.dto';
-import { ApiTag, Permission } from 'src/enum';
-import { Auth, Authenticated } from 'src/middleware/auth.guard';
-import { PersonService } from 'src/services/person.service';
-import { UUIDParamDto } from 'src/validation';
+  PersonResponseDto,
+} from 'src/dtos/person.dto.js';
+import { ApiTag, Permission } from 'src/enum.js';
+import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
+import { PersonService } from 'src/services/person.service.js';
+import { UUIDParamDto } from 'src/validation.js';
 
 @ApiTags(ApiTag.Faces)
 @Controller('faces')
@@ -48,7 +61,7 @@ export class FaceController {
 
   @Post('identify')
   @Authenticated({ permission: Permission.FaceRead })
-  @UseInterceptors(FileInterceptor('file', { dest: tmpdir() }))
+  @UseInterceptors(FileInterceptor('file', { dest: tmpdir(), limits: { fileSize: 20 * 1024 * 1024, files: 1 } }))
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {

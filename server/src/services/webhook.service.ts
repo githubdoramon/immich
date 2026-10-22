@@ -1,18 +1,16 @@
 import { Injectable } from '@nestjs/common';
-import { plainToInstance } from 'class-transformer';
-import { validateSync, ValidationError } from 'class-validator';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import process from 'node:process';
-import { WEBHOOK_DEFAULT_BACKOFF_MS, WEBHOOK_DEFAULT_RETRIES, WEBHOOK_DEFAULT_TIMEOUT_MS } from 'src/constants';
-import { OnEvent, OnJob } from 'src/decorators';
-import { WebhookConfigDto, WebhookDefinitionDto } from 'src/dtos/webhook-config.dto';
-import { JobName, JobStatus, QueueName } from 'src/enum';
-import { EmitEvent, EmitHandler, EventRepository } from 'src/repositories/event.repository';
-import { JobRepository } from 'src/repositories/job.repository';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { IWebhookJob } from 'src/types';
+import type { IWebhookJob } from 'src/types.js';
+import { WEBHOOK_DEFAULT_BACKOFF_MS, WEBHOOK_DEFAULT_RETRIES, WEBHOOK_DEFAULT_TIMEOUT_MS } from 'src/constants.js';
+import { OnEvent, OnJob } from 'src/decorators.js';
+import { WebhookConfigSchema, type WebhookDefinitionDto } from 'src/dtos/webhook-config.dto.js';
+import { JobName, JobStatus, QueueName } from 'src/enum.js';
+import { EmitEvent, EmitHandler, EventRepository } from 'src/repositories/event.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 
 type WebhookTarget = {
   id: string;
@@ -98,10 +96,7 @@ export class WebhookService {
     timestamp: string,
     deliveryId: string,
   ): Record<string, string> {
-    const headers: Record<string, string> = {};
-    for (const [key, value] of Object.entries(configuredHeaders)) {
-      headers[key] = value;
-    }
+    const headers: Record<string, string> = Object.fromEntries(Object.entries(configuredHeaders));
 
     const lowerKeys = new Set(Object.keys(headers).map((key) => key.toLowerCase()));
     if (!lowerKeys.has('content-type')) {
@@ -137,16 +132,7 @@ export class WebhookService {
     try {
       const content = await readFile(configPath, 'utf8');
       const parsed = JSON.parse(content);
-      const dto = plainToInstance(WebhookConfigDto, parsed, { enableImplicitConversion: false });
-      const errors = validateSync(dto, { whitelist: true, forbidUnknownValues: true });
-      if (errors.length > 0) {
-        const messages = errors.flatMap((error: ValidationError) =>
-          Object.values(error.constraints ?? {}).map((message) => `${error.property}: ${message}`),
-        );
-        this.logger.error(`Invalid webhook configuration: ${messages.join('; ')}`);
-        this.webhooks = [];
-        return;
-      }
+      const dto = WebhookConfigSchema.parse(parsed);
 
       this.webhooks = dto.webhooks
         .map((definition: WebhookDefinitionDto, index: number) => this.toWebhookTarget(definition, index))
@@ -221,7 +207,7 @@ export class WebhookService {
   }
 
   private async queueDelivery(webhook: WebhookTarget, event: EmitEvent, args: unknown[]) {
-    const payload = this.serializePayload(args);
+    const payload = this.serializePayload(event, args);
     const timestamp = new Date().toISOString();
     const deliveryId = randomUUID();
 
@@ -245,12 +231,28 @@ export class WebhookService {
     });
   }
 
-  private serializePayload(args: unknown[]) {
+  private serializePayload(event: EmitEvent, args: unknown[]) {
     if (args.length === 0) {
       return null;
     }
 
-    const payload = args.length === 1 ? args[0] : args;
+    let payload = args.length === 1 ? args[0] : args;
+    if (['PersonCreate', 'PersonUpdate', 'PersonDelete'].includes(event)) {
+      const { person, previous, ...rest } = payload as {
+        person: Record<string, unknown>;
+        previous?: Record<string, unknown>;
+      };
+      const normalize = ({
+        otherPeople: _otherPeople,
+        sharedBy: _sharedBy,
+        sharedWith: _sharedWith,
+        ...person
+      }: Record<string, unknown>) => ({
+        ...person,
+        id: person.personGroupId,
+      });
+      payload = { ...rest, person: normalize(person), ...(previous && { previous: normalize(previous) }) };
+    }
 
     try {
       return JSON.parse(

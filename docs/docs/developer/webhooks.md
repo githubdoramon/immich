@@ -38,17 +38,17 @@ IMMICH_WEBHOOKS_CONFIG=/absolute/path/to/webhooks.json
 }
 ```
 
-| Field | Required | Description |
-| --- | --- | --- |
-| `id` | No | Friendly identifier used in logs (defaults to `webhook-<index>`). |
-| `events` | Yes | Array of event names (matches `EmitEvent` values, e.g. `PersonCreate`). |
-| `url` | Yes | Destination endpoint. |
-| `method` | No | HTTP method (`POST`, `PUT`, or `PATCH`, default: `POST`). |
-| `headers` | No | Additional request headers (use for authentication/secrets). |
-| `timeoutMs` | No | Request timeout in milliseconds (default: `10000`). |
-| `retries` | No | Number of delivery attempts (default: `3`). |
-| `backoffMs` | No | Initial backoff (milliseconds) for exponential retry (default: `2000`). |
-| `includeServerEvents` | No | Deliver events that originate from internal server processes (`false` by default). |
+| Field                 | Required | Description                                                                        |
+| --------------------- | -------- | ---------------------------------------------------------------------------------- |
+| `id`                  | No       | Friendly identifier used in logs (defaults to `webhook-<index>`).                  |
+| `events`              | Yes      | Array of event names (matches `EmitEvent` values, e.g. `PersonCreate`).            |
+| `url`                 | Yes      | Destination endpoint.                                                              |
+| `method`              | No       | HTTP method (`POST`, `PUT`, or `PATCH`, default: `POST`).                          |
+| `headers`             | No       | Additional request headers (use for authentication/secrets).                       |
+| `timeoutMs`           | No       | Request timeout in milliseconds (default: `10000`).                                |
+| `retries`             | No       | Number of delivery attempts (default: `3`).                                        |
+| `backoffMs`           | No       | Initial backoff (milliseconds) for exponential retry (default: `2000`).            |
+| `includeServerEvents` | No       | Deliver events that originate from internal server processes (`false` by default). |
 
 ## Delivery details
 
@@ -76,3 +76,14 @@ The dispatcher reads the configuration during application bootstrap. Update the 
 - Ensure the target endpoint responds with a `2xx` status code; non-success responses will trigger retries.
 - If no webhooks are firing, confirm the environment variable points to an existing file and that the JSON validates against the schema above.
 
+## Compatibility with upstream v3.3
+
+Person events keep the `person`, `previous` (updates only), and `actorId` fields.
+The `id` inside each person snapshot aliases upstream's `personGroupId`; `ownerId`
+identifies whose person record changed. Existing person IDs are preserved by
+upstream's database migration. Sharing projections (`otherPeople`, `sharedBy`,
+`sharedWith`) are omitted from webhook snapshots.
+
+The configuration format is unchanged. HTTP and HTTPS endpoints without a top-level
+domain remain supported, including Docker service names. Headers must have string
+values. See [custom fork maintenance](./custom-fork.md) for upgrade and deployment details.

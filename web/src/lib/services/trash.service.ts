@@ -1,27 +1,29 @@
-import { handleError } from '$lib/utils/handle-error';
-import { getFormatter } from '$lib/utils/i18n';
 import { emptyTrash, restoreTrash } from '@immich/sdk';
 import { modalManager, toastManager, type ActionItem } from '@immich/ui';
 import { mdiDeleteForeverOutline, mdiHistory } from '@mdi/js';
 import type { MessageFormatter } from 'svelte-i18n';
+import { handleError } from '$lib/utils/handle-error';
+import { getFormatter } from '$lib/utils/i18n';
 
-export const getTrashActions = ($t: MessageFormatter) => {
+export const getTrashActions = ($t: MessageFormatter, assetCount: number) => {
   const RestoreAll: ActionItem = {
     title: $t('restore_all'),
     icon: mdiHistory,
+    $if: () => assetCount > 0,
     onAction: () => handleRestoreTrash(),
   };
 
   const Empty: ActionItem = {
     title: $t('empty_trash'),
     icon: mdiDeleteForeverOutline,
+    $if: () => assetCount > 0,
     onAction: () => handleEmptyTrash(),
   };
 
   return { RestoreAll, Empty };
 };
 
-export const handleEmptyTrash = async () => {
+const handleEmptyTrash = async () => {
   const $t = await getFormatter();
 
   const confirmed = await modalManager.showDialog({ prompt: $t('empty_trash_confirmation') });
@@ -31,13 +33,13 @@ export const handleEmptyTrash = async () => {
 
   try {
     const { count } = await emptyTrash();
-    toastManager.success($t('assets_permanently_deleted_count', { values: { count } }));
+    toastManager.primary($t('assets_permanently_deleted_count', { values: { count } }));
   } catch (error) {
     handleError(error, $t('errors.unable_to_empty_trash'));
   }
 };
 
-export const handleRestoreTrash = async () => {
+const handleRestoreTrash = async () => {
   const $t = await getFormatter();
 
   const confirmed = await modalManager.showDialog({ prompt: $t('assets_restore_confirmation') });
@@ -47,7 +49,7 @@ export const handleRestoreTrash = async () => {
 
   try {
     const { count } = await restoreTrash();
-    toastManager.success($t('assets_restored_count', { values: { count } }));
+    toastManager.primary($t('assets_restored_count', { values: { count } }));
   } catch (error) {
     handleError(error, $t('errors.unable_to_restore_trash'));
   }

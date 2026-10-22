@@ -1,16 +1,16 @@
 import {
   Column,
   ForeignKeyColumn,
-  Generated,
+  type Generated,
   Index,
   Int8,
   Table,
   Timestamp,
   UpdateDateColumn,
 } from '@immich/sql-tools';
-import { LockableProperty } from 'src/database';
-import { UpdatedAtTrigger, UpdateIdColumn } from 'src/decorators';
-import { AssetTable } from 'src/schema/tables/asset.table';
+import { LockableProperty } from 'src/database.js';
+import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
+import { AssetTable } from 'src/schema/tables/asset.table.js';
 
 @Table('asset_exif')
 @Index({
@@ -111,7 +111,7 @@ export class AssetExifTable {
   tags!: string[] | null;
 
   @UpdateDateColumn({ default: () => 'clock_timestamp()' })
-  updatedAt!: Generated<Date>;
+  updatedAt!: Generated<Timestamp>;
 
   @UpdateIdColumn({ index: true })
   updateId!: Generated<string>;

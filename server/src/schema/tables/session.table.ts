@@ -2,14 +2,14 @@ import {
   Column,
   CreateDateColumn,
   ForeignKeyColumn,
-  Generated,
+  type Generated,
   PrimaryGeneratedColumn,
   Table,
   Timestamp,
   UpdateDateColumn,
 } from '@immich/sql-tools';
-import { UpdatedAtTrigger, UpdateIdColumn } from 'src/decorators';
-import { UserTable } from 'src/schema/tables/user.table';
+import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
+import { UserTable } from 'src/schema/tables/user.table.js';
 
 @Table({ name: 'session' })
 @UpdatedAtTrigger('session_updatedAt')
@@ -52,4 +52,10 @@ export class SessionTable {
 
   @Column({ type: 'timestamp with time zone', nullable: true })
   pinExpiresAt!: Timestamp | null;
+
+  @Column({ nullable: true, index: true })
+  oauthSid!: string | null;
+
+  @Column({ nullable: true })
+  oauthBearerToken!: string | null;
 }

@@ -4,20 +4,19 @@ import 'package:drift/drift.dart' as drift;
 import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:immich_mobile/data/db/main/database.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/domain/models/store.model.dart';
 import 'package:immich_mobile/domain/models/sync_event.model.dart';
 import 'package:immich_mobile/domain/services/store.service.dart';
 import 'package:immich_mobile/domain/services/sync_stream.service.dart';
 import 'package:immich_mobile/entities/store.entity.dart';
-import 'package:immich_mobile/infrastructure/repositories/db.repository.dart';
 import 'package:immich_mobile/infrastructure/repositories/local_asset.repository.dart';
-import 'package:immich_mobile/infrastructure/repositories/storage.repository.dart';
 import 'package:immich_mobile/infrastructure/repositories/store.repository.dart';
 import 'package:immich_mobile/infrastructure/repositories/sync_api.repository.dart';
 import 'package:immich_mobile/infrastructure/repositories/sync_stream.repository.dart';
 import 'package:immich_mobile/infrastructure/repositories/trashed_local_asset.repository.dart';
-import 'package:immich_mobile/repositories/local_files_manager.repository.dart';
+import 'package:immich_mobile/repositories/asset_media.repository.dart';
 import 'package:immich_mobile/utils/semver.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:openapi/api.dart';
@@ -26,7 +25,6 @@ import '../../api.mocks.dart';
 import '../../fixtures/asset.stub.dart';
 import '../../fixtures/sync_stream.stub.dart';
 import '../../infrastructure/repository.mock.dart';
-import '../../mocks/asset_entity.mock.dart';
 import '../../repository.mocks.dart';
 import '../../service.mocks.dart';
 
@@ -38,22 +36,14 @@ class _AbortCallbackWrapper {
 
 class _MockAbortCallbackWrapper extends Mock implements _AbortCallbackWrapper {}
 
-class _CancellationWrapper {
-  const _CancellationWrapper();
-
-  bool call() => false;
-}
-
-class _MockCancellationWrapper extends Mock implements _CancellationWrapper {}
-
 void main() {
   late SyncStreamService sut;
   late SyncStreamRepository mockSyncStreamRepo;
   late SyncApiRepository mockSyncApiRepo;
-  late DriftLocalAssetRepository mockLocalAssetRepo;
-  late DriftTrashedLocalAssetRepository mockTrashedLocalAssetRepo;
-  late LocalFilesManagerRepository mockLocalFilesManagerRepo;
-  late StorageRepository mockStorageRepo;
+  late LocalAssetRepository mockLocalAssetRepo;
+  late TrashedLocalAssetRepository mockTrashedLocalAssetRepo;
+  late AssetMediaRepository mockAssetMediaRepo;
+  late MockPermissionRepository mockPermissionRepo;
   late MockApiService mockApi;
   late MockServerApi mockServerApi;
   late MockSyncMigrationRepository mockSyncMigrationRepo;
@@ -70,7 +60,7 @@ void main() {
     registerFallbackValue(const SemVer(major: 2, minor: 5, patch: 0));
 
     db = Drift(drift.DatabaseConnection(NativeDatabase.memory(), closeStreamsSynchronously: true));
-    await StoreService.init(storeRepository: DriftStoreRepository(db));
+    await StoreService.init(storeRepository: StoreRepository(db));
   });
 
   tearDownAll(() async {
@@ -79,15 +69,15 @@ void main() {
     await db.close();
   });
 
-  successHandler(Invocation _) async => true;
+  Future<bool> successHandler(Invocation _) async => true;
 
   setUp(() async {
     mockSyncStreamRepo = MockSyncStreamRepository();
     mockSyncApiRepo = MockSyncApiRepository();
     mockLocalAssetRepo = MockLocalAssetRepository();
     mockTrashedLocalAssetRepo = MockTrashedLocalAssetRepository();
-    mockLocalFilesManagerRepo = MockLocalFilesManagerRepository();
-    mockStorageRepo = MockStorageRepository();
+    mockAssetMediaRepo = MockAssetMediaRepository();
+    mockPermissionRepo = MockPermissionRepository();
     mockAbortCallbackWrapper = _MockAbortCallbackWrapper();
     mockResetCallbackWrapper = _MockAbortCallbackWrapper();
     mockApi = MockApiService();
@@ -96,9 +86,13 @@ void main() {
 
     when(() => mockAbortCallbackWrapper()).thenReturn(false);
 
-    when(() => mockSyncApiRepo.streamChanges(any(), serverVersion: any(named: 'serverVersion'))).thenAnswer((
-      invocation,
-    ) async {
+    when(
+      () => mockSyncApiRepo.streamChanges(
+        any(),
+        serverVersion: any(named: 'serverVersion'),
+        abortSignal: any(named: 'abortSignal'),
+      ),
+    ).thenAnswer((invocation) async {
       handleEventsCallback = invocation.positionalArguments.first;
     });
 
@@ -107,6 +101,7 @@ void main() {
         any(),
         onReset: any(named: 'onReset'),
         serverVersion: any(named: 'serverVersion'),
+        abortSignal: any(named: 'abortSignal'),
       ),
     ).thenAnswer((invocation) async {
       handleEventsCallback = invocation.positionalArguments.first;
@@ -118,7 +113,7 @@ void main() {
     when(() => mockApi.serverInfoApi).thenReturn(mockServerApi);
     when(
       () => mockServerApi.getServerVersion(),
-    ).thenAnswer((_) async => ServerVersionResponseDto(major: 1, minor: 132, patch_: 0));
+    ).thenAnswer((_) async => ServerVersionResponseDto(major: 1, minor: 132, patch_: 0, prerelease: null));
 
     when(() => mockSyncStreamRepo.updateUsersV1(any())).thenAnswer(successHandler);
     when(() => mockSyncStreamRepo.deleteUsersV1(any())).thenAnswer(successHandler);
@@ -136,7 +131,7 @@ void main() {
     when(
       () => mockSyncStreamRepo.updateAssetsExifV1(any(), debugLabel: any(named: 'debugLabel')),
     ).thenAnswer(successHandler);
-    when(() => mockSyncStreamRepo.updateMemoriesV1(any())).thenAnswer(successHandler);
+    when(() => mockSyncStreamRepo.updateMemoriesV2(any())).thenAnswer(successHandler);
     when(() => mockSyncStreamRepo.deleteMemoriesV1(any())).thenAnswer(successHandler);
     when(() => mockSyncStreamRepo.updateMemoryAssetsV1(any())).thenAnswer(successHandler);
     when(() => mockSyncStreamRepo.deleteMemoryAssetsV1(any())).thenAnswer(successHandler);
@@ -159,8 +154,8 @@ void main() {
       syncStreamRepository: mockSyncStreamRepo,
       localAssetRepository: mockLocalAssetRepo,
       trashedLocalAssetRepository: mockTrashedLocalAssetRepo,
-      localFilesManager: mockLocalFilesManagerRepo,
-      storageRepository: mockStorageRepo,
+      assetMediaRepository: mockAssetMediaRepo,
+      permissionRepository: mockPermissionRepo,
       api: mockApi,
       syncMigrationRepository: mockSyncMigrationRepo,
     );
@@ -170,10 +165,12 @@ void main() {
     when(() => mockTrashedLocalAssetRepo.getToRestore()).thenAnswer((_) async => []);
     when(() => mockTrashedLocalAssetRepo.applyRestoredAssets(any())).thenAnswer((_) async {});
     hasManageMediaPermission = false;
-    when(() => mockLocalFilesManagerRepo.hasManageMediaPermission()).thenAnswer((_) async => hasManageMediaPermission);
-    when(() => mockLocalFilesManagerRepo.moveToTrash(any())).thenAnswer((_) async => true);
-    when(() => mockLocalFilesManagerRepo.restoreAssetsFromTrash(any())).thenAnswer((_) async => []);
-    when(() => mockStorageRepo.getAssetEntityForAsset(any())).thenAnswer((_) async => null);
+    when(() => mockPermissionRepo.hasManageMediaPermission()).thenAnswer((_) async => hasManageMediaPermission);
+    when(() => mockAssetMediaRepo.deleteAll(any())).thenAnswer((invocation) async {
+      final ids = invocation.positionalArguments.first as List<String>;
+      return ids;
+    });
+    when(() => mockAssetMediaRepo.restoreAssetsFromTrash(any())).thenAnswer((_) async => []);
     await Store.put(StoreKey.manageLocalMediaAndroid, false);
   });
 
@@ -233,17 +230,16 @@ void main() {
     });
 
     test("aborts and stops processing if cancelled during iteration", () async {
-      final cancellationChecker = _MockCancellationWrapper();
-      when(() => cancellationChecker()).thenReturn(false);
+      final cancellation = Completer<void>();
 
       sut = SyncStreamService(
         syncApiRepository: mockSyncApiRepo,
         syncStreamRepository: mockSyncStreamRepo,
         localAssetRepository: mockLocalAssetRepo,
         trashedLocalAssetRepository: mockTrashedLocalAssetRepo,
-        localFilesManager: mockLocalFilesManagerRepo,
-        storageRepository: mockStorageRepo,
-        cancelChecker: cancellationChecker.call,
+        assetMediaRepository: mockAssetMediaRepo,
+        permissionRepository: mockPermissionRepo,
+        cancellation: cancellation,
         api: mockApi,
         syncMigrationRepository: mockSyncMigrationRepo,
       );
@@ -252,7 +248,7 @@ void main() {
       final events = [SyncStreamStub.userDeleteV1, SyncStreamStub.userV1Admin, SyncStreamStub.partnerDeleteV1];
 
       when(() => mockSyncStreamRepo.deleteUsersV1(any())).thenAnswer((_) async {
-        when(() => cancellationChecker()).thenReturn(true);
+        cancellation.complete();
       });
 
       await handleEventsCallback(events, mockAbortCallbackWrapper.call, mockResetCallbackWrapper.call);
@@ -267,8 +263,7 @@ void main() {
     });
 
     test("aborts and stops processing if cancelled before processing batch", () async {
-      final cancellationChecker = _MockCancellationWrapper();
-      when(() => cancellationChecker()).thenReturn(false);
+      final cancellation = Completer<void>();
 
       final processingCompleter = Completer<void>();
       bool handler1Started = false;
@@ -282,9 +277,9 @@ void main() {
         syncStreamRepository: mockSyncStreamRepo,
         localAssetRepository: mockLocalAssetRepo,
         trashedLocalAssetRepository: mockTrashedLocalAssetRepo,
-        localFilesManager: mockLocalFilesManagerRepo,
-        storageRepository: mockStorageRepo,
-        cancelChecker: cancellationChecker.call,
+        assetMediaRepository: mockAssetMediaRepo,
+        permissionRepository: mockPermissionRepo,
+        cancellation: cancellation,
         api: mockApi,
         syncMigrationRepository: mockSyncMigrationRepo,
       );
@@ -303,7 +298,7 @@ void main() {
       expect(handler1Started, isTrue);
 
       // Signal cancellation while handler 1 is waiting
-      when(() => cancellationChecker()).thenReturn(true);
+      cancellation.complete();
       await pumpEventQueue();
 
       processingCompleter.complete();
@@ -325,7 +320,7 @@ void main() {
       await simulateEvents(events);
 
       verifyInOrder([
-        () => mockSyncStreamRepo.updateMemoriesV1(any()),
+        () => mockSyncStreamRepo.updateMemoriesV2(any()),
         () => mockSyncApiRepo.ack(["5"]),
         () => mockSyncStreamRepo.deleteMemoriesV1(any()),
         () => mockSyncApiRepo.ack(["6"]),
@@ -354,14 +349,14 @@ void main() {
         () => mockSyncApiRepo.ack(["1"]),
         () => mockSyncStreamRepo.updateMemoryAssetsV1(any()),
         () => mockSyncApiRepo.ack(["7"]),
-        () => mockSyncStreamRepo.updateMemoriesV1(any()),
+        () => mockSyncStreamRepo.updateMemoriesV2(any()),
         () => mockSyncApiRepo.ack(["5"]),
       ]);
       verifyNever(() => mockAbortCallbackWrapper());
     });
 
     test("handles memory sync failure gracefully", () async {
-      when(() => mockSyncStreamRepo.updateMemoriesV1(any())).thenThrow(Exception("Memory sync failed"));
+      when(() => mockSyncStreamRepo.updateMemoriesV2(any())).thenThrow(Exception("Memory sync failed"));
 
       final events = [SyncStreamStub.memoryV1, SyncStreamStub.userV1Admin];
 
@@ -391,8 +386,21 @@ void main() {
 
       await simulateEvents(events);
 
-      verify(() => mockSyncStreamRepo.updateMemoriesV1(any())).called(1);
+      verify(() => mockSyncStreamRepo.updateMemoriesV2(any())).called(1);
       verify(() => mockSyncApiRepo.ack(["5"])).called(1);
+    });
+
+    test("processes memory v2 events", () async {
+      final events = [SyncStreamStub.memoryV2, SyncStreamStub.memoryToAssetV2];
+
+      await simulateEvents(events);
+
+      verifyInOrder([
+        () => mockSyncStreamRepo.updateMemoriesV2(any()),
+        () => mockSyncApiRepo.ack(["9"]),
+        () => mockSyncStreamRepo.updateMemoryAssetsV1(any()),
+        () => mockSyncApiRepo.ack(["10"]),
+      ]);
     });
   });
 
@@ -419,23 +427,15 @@ void main() {
         'album-b': [mergedAsset],
       };
       when(() => mockLocalAssetRepo.getAssetsFromBackupAlbums(any())).thenAnswer((invocation) async {
-        final Iterable<String> requestedChecksums = invocation.positionalArguments.first as Iterable<String>;
-        expect(requestedChecksums.toSet(), equals({'checksum-local', 'checksum-merged', 'checksum-remote-only'}));
+        final Iterable<String> requestedRemoteIds = invocation.positionalArguments.first as Iterable<String>;
+        expect(requestedRemoteIds.toSet(), equals({'remote-1', 'remote-2', 'remote-3'}));
         return assetsByAlbum;
       });
 
-      final localEntity = MockAssetEntity();
-      when(() => localEntity.getMediaUrl()).thenAnswer((_) async => 'content://local-only');
-      when(() => mockStorageRepo.getAssetEntityForAsset(localAsset)).thenAnswer((_) async => localEntity);
-
-      final mergedEntity = MockAssetEntity();
-      when(() => mergedEntity.getMediaUrl()).thenAnswer((_) async => 'content://merged-local');
-      when(() => mockStorageRepo.getAssetEntityForAsset(mergedAsset)).thenAnswer((_) async => mergedEntity);
-
-      when(() => mockLocalFilesManagerRepo.moveToTrash(any())).thenAnswer((invocation) async {
-        final urls = invocation.positionalArguments.first as List<String>;
-        expect(urls, unorderedEquals(['content://local-only', 'content://merged-local']));
-        return true;
+      when(() => mockAssetMediaRepo.deleteAll(any())).thenAnswer((invocation) async {
+        final ids = invocation.positionalArguments.first as List<String>;
+        expect(ids, unorderedEquals(['local-only', 'merged-local']));
+        return ids;
       });
 
       final events = [
@@ -461,8 +461,49 @@ void main() {
 
       await simulateEvents(events);
 
-      verify(() => mockTrashedLocalAssetRepo.trashLocalAsset(assetsByAlbum)).called(1);
+      final trashArgs =
+          verify(() => mockTrashedLocalAssetRepo.trashLocalAsset(captureAny())).captured.single
+              as Map<String, List<LocalAsset>>;
+      expect(trashArgs.keys, unorderedEquals(['album-a', 'album-b']));
+      expect(trashArgs['album-a'], [localAsset]);
+      expect(trashArgs['album-b'], [mergedAsset]);
+      verify(() => mockAssetMediaRepo.deleteAll(any())).called(1);
       verify(() => mockSyncApiRepo.ack(['asset-remote-only-3'])).called(1);
+    });
+
+    test("records only assets that were moved to device trash", () async {
+      final movedAsset = LocalAssetStub.image1.copyWith(id: 'moved-local', checksum: 'checksum-moved');
+      final skippedAsset = LocalAssetStub.image2.copyWith(id: 'skipped-local', checksum: 'checksum-skipped');
+      when(() => mockLocalAssetRepo.getAssetsFromBackupAlbums(any())).thenAnswer(
+        (_) async => {
+          'album-a': [movedAsset],
+          'album-b': [skippedAsset],
+        },
+      );
+      when(() => mockAssetMediaRepo.deleteAll(any())).thenAnswer((_) async => ['moved-local']);
+
+      final events = [
+        SyncStreamStub.assetTrashed(
+          id: 'remote-moved',
+          checksum: movedAsset.checksum!,
+          ack: 'asset-remote-moved',
+          trashedAt: DateTime(2025, 5, 1),
+        ),
+        SyncStreamStub.assetTrashed(
+          id: 'remote-skipped',
+          checksum: skippedAsset.checksum!,
+          ack: 'asset-remote-skipped',
+          trashedAt: DateTime(2025, 5, 2),
+        ),
+      ];
+
+      await simulateEvents(events);
+
+      final trashArgs =
+          verify(() => mockTrashedLocalAssetRepo.trashLocalAsset(captureAny())).captured.single
+              as Map<String, List<LocalAsset>>;
+      expect(trashArgs.keys, ['album-a']);
+      expect(trashArgs['album-a'], [movedAsset]);
     });
 
     test("skips device trashing when no local assets match the remote trash payload", () async {
@@ -478,17 +519,23 @@ void main() {
       await simulateEvents(events);
 
       verify(() => mockLocalAssetRepo.getAssetsFromBackupAlbums(any())).called(1);
-      verifyNever(() => mockLocalFilesManagerRepo.moveToTrash(any()));
+      verifyNever(() => mockAssetMediaRepo.deleteAll(any()));
       verifyNever(() => mockTrashedLocalAssetRepo.trashLocalAsset(any()));
     });
 
-    test("does not request local deletions for permanent remote delete events", () async {
+    test("requests local deletions lookup by remote ids for permanent remote delete events", () async {
+      when(() => mockLocalAssetRepo.getAssetsFromBackupAlbums(any())).thenAnswer((invocation) async {
+        final Iterable<String> requestedRemoteIds = invocation.positionalArguments.first as Iterable<String>;
+        expect(requestedRemoteIds.toSet(), equals({'remote-asset'}));
+        return {};
+      });
+
       final events = [SyncStreamStub.assetDeleteV1];
 
       await simulateEvents(events);
 
-      verifyNever(() => mockLocalAssetRepo.getAssetsFromBackupAlbums(any()));
-      verifyNever(() => mockLocalFilesManagerRepo.moveToTrash(any()));
+      verify(() => mockLocalAssetRepo.getAssetsFromBackupAlbums(any())).called(1);
+      verifyNever(() => mockAssetMediaRepo.deleteAll(any()));
       verify(() => mockSyncStreamRepo.deleteAssetsV1(any())).called(1);
     });
 
@@ -499,7 +546,7 @@ void main() {
       when(() => mockTrashedLocalAssetRepo.getToRestore()).thenAnswer((_) async => trashedAssets);
 
       final restoredIds = ['trashed-1'];
-      when(() => mockLocalFilesManagerRepo.restoreAssetsFromTrash(any())).thenAnswer((invocation) async {
+      when(() => mockAssetMediaRepo.restoreAssetsFromTrash(any())).thenAnswer((invocation) async {
         final Iterable<LocalAsset> requestedAssets = invocation.positionalArguments.first as Iterable<LocalAsset>;
         expect(requestedAssets, orderedEquals(trashedAssets));
         return restoredIds;
@@ -520,7 +567,7 @@ void main() {
       await Store.put(StoreKey.syncMigrationStatus, "[]");
       when(
         () => mockServerApi.getServerVersion(),
-      ).thenAnswer((_) async => ServerVersionResponseDto(major: 2, minor: 4, patch_: 1));
+      ).thenAnswer((_) async => ServerVersionResponseDto(major: 2, minor: 4, patch_: 1, prerelease: null));
 
       await sut.sync();
 
@@ -548,7 +595,7 @@ void main() {
       await Store.put(StoreKey.syncMigrationStatus, "[]");
       when(
         () => mockServerApi.getServerVersion(),
-      ).thenAnswer((_) async => ServerVersionResponseDto(major: 2, minor: 5, patch_: 0));
+      ).thenAnswer((_) async => ServerVersionResponseDto(major: 2, minor: 5, patch_: 0, prerelease: null));
       await sut.sync();
 
       verifyInOrder([
@@ -578,7 +625,7 @@ void main() {
 
       when(
         () => mockServerApi.getServerVersion(),
-      ).thenAnswer((_) async => ServerVersionResponseDto(major: 2, minor: 4, patch_: 1));
+      ).thenAnswer((_) async => ServerVersionResponseDto(major: 2, minor: 4, patch_: 1, prerelease: null));
 
       await sut.sync();
 

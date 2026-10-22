@@ -13,7 +13,7 @@ class NetworkApiPlugin : FlutterPlugin, ActivityAware {
   private var networkApi: NetworkApiImpl? = null
 
   override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-    networkApi = NetworkApiImpl()
+    networkApi = NetworkApiImpl(binding.applicationContext)
     NetworkApi.setUp(binding.binaryMessenger, networkApi)
   }
 
@@ -39,8 +39,10 @@ class NetworkApiPlugin : FlutterPlugin, ActivityAware {
   }
 }
 
-private class NetworkApiImpl() : NetworkApi {
+private class NetworkApiImpl(private val context: Context) : NetworkApi {
   var activity: Activity? = null
+
+  override fun getAppGroupId(): String = context.packageName
 
   override fun addCertificate(clientData: ClientCertData, callback: (Result<Unit>) -> Unit) {
     try {
@@ -79,7 +81,7 @@ private class NetworkApiImpl() : NetworkApi {
     return HttpClientManager.getClientPointer()
   }
 
-  override fun setRequestHeaders(headers: Map<String, String>, serverUrls: List<String>) {
-    HttpClientManager.setRequestHeaders(headers, serverUrls)
+  override fun setRequestHeaders(headers: Map<String, String>, serverUrls: List<String>, token: String?) {
+    HttpClientManager.setRequestHeaders(headers, serverUrls, token)
   }
 }

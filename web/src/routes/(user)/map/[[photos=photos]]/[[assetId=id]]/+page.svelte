@@ -1,16 +1,17 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import UserPageLayout from '$lib/components/layouts/user-page-layout.svelte';
-  import MapTimelinePanel from '$lib/components/shared-components/map/MapTimelinePanel.svelte';
+  import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
+  import MapTimelinePanel from './MapTimelinePanel.svelte';
   import type { SelectionBBox } from '$lib/components/shared-components/map/types';
   import { timeToLoadTheMap } from '$lib/constants';
   import Portal from '$lib/elements/Portal.svelte';
+  import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Route } from '$lib/route';
-  import { assetViewingStore } from '$lib/stores/asset-viewing.store';
   import { handlePromiseError } from '$lib/utils';
   import { delay } from '$lib/utils/asset-utils';
   import { navigate } from '$lib/utils/navigation';
+  import { mapSettings } from '$lib/stores/preferences.store';
   import { LoadingSpinner } from '@immich/ui';
   import { onDestroy } from 'svelte';
   import type { PageData } from './$types';
@@ -20,9 +21,6 @@
   }
 
   let { data }: Props = $props();
-
-  let { isViewing: showAssetViewer, asset: viewingAsset, setAssetId } = assetViewingStore;
-
   let selectedClusterIds = $state.raw(new Set<string>());
   let selectedClusterBBox = $state.raw<SelectionBBox>();
   let isTimelinePanelVisible = $state(false);
@@ -34,7 +32,7 @@
   }
 
   onDestroy(() => {
-    assetViewingStore.showAssetViewer(false);
+    assetViewerManager.showAssetViewer(false);
   });
 
   if (!featureFlagsManager.value.map) {
@@ -42,7 +40,7 @@
   }
 
   async function onViewAssets(assetIds: string[]) {
-    await setAssetId(assetIds[0]);
+    await assetViewerManager.setAssetId(assetIds[0]);
     closeTimelinePanel();
   }
 
@@ -50,29 +48,36 @@
     selectedClusterIds = new Set(assetIds);
     selectedClusterBBox = bbox;
     isTimelinePanelVisible = true;
-    assetViewingStore.showAssetViewer(false);
+    assetViewerManager.showAssetViewer(false);
     handlePromiseError(navigate({ targetRoute: 'current', assetId: null }));
   }
 </script>
 
 {#if featureFlagsManager.value.map}
   <UserPageLayout title={data.meta.title}>
-    <div class="isolate flex h-full w-full flex-col sm:flex-row">
+    <div class="isolate flex size-full flex-col sm:flex-row">
       <div
         class={[
           'min-h-0',
-          isTimelinePanelVisible ? 'h-1/2 w-full pb-2 sm:h-full sm:w-2/3 sm:pe-2 sm:pb-0' : 'h-full w-full',
+          isTimelinePanelVisible ? 'h-1/2 w-full pb-2 sm:h-full sm:w-2/3 sm:pe-2 sm:pb-0' : 'size-full',
         ]}
       >
-        {#await import('$lib/components/shared-components/map/map.svelte')}
+        {#await import('$lib/components/shared-components/map/Map.svelte')}
           {#await delay(timeToLoadTheMap) then}
             <!-- show the loading spinner only if loading the map takes too much time -->
-            <div class="flex items-center justify-center h-full w-full">
+            <div class="flex size-full items-center justify-center">
               <LoadingSpinner />
             </div>
           {/await}
         {:then { default: Map }}
-          <Map hash onSelect={onViewAssets} {onClusterSelect} />
+          <Map
+            hash
+            onSelect={onViewAssets}
+            {onClusterSelect}
+            onViewportClose={closeTimelinePanel}
+            viewportGridActive={isTimelinePanelVisible}
+            autoOpenPanel={$mapSettings.showAssetPanel}
+          />
         {/await}
       </div>
 
@@ -89,13 +94,13 @@
     </div>
   </UserPageLayout>
   <Portal target="body">
-    {#if $showAssetViewer}
-      {#await import('$lib/components/asset-viewer/asset-viewer.svelte') then { default: AssetViewer }}
+    {#if assetViewerManager.isViewing && !isTimelinePanelVisible}
+      {#await import('$lib/components/asset-viewer/AssetViewer.svelte') then { default: AssetViewer }}
         <AssetViewer
-          cursor={{ current: $viewingAsset }}
+          cursor={{ current: assetViewerManager.asset! }}
           showNavigation={false}
           onClose={() => {
-            assetViewingStore.showAssetViewer(false);
+            assetViewerManager.showAssetViewer(false);
             handlePromiseError(navigate({ targetRoute: 'current', assetId: null }));
           }}
           isShared={false}

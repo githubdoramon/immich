@@ -1,61 +1,21 @@
-import { Type } from 'class-transformer';
-import {
-  IsArray,
-  IsBoolean,
-  IsInt,
-  IsNotEmpty,
-  IsObject,
-  IsOptional,
-  IsString,
-  IsUrl,
-  Min,
-  ValidateNested,
-} from 'class-validator';
+import z from 'zod';
 
-export class WebhookDefinitionDto {
-  @IsOptional()
-  @IsString()
-  @IsNotEmpty()
-  id?: string;
+export const WebhookConfigSchema = z.object({
+  webhooks: z
+    .array(
+      z.object({
+        id: z.string().min(1).optional(),
+        events: z.array(z.string()),
+        url: z.url({ protocol: /^https?$/ }),
+        method: z.string().optional(),
+        headers: z.record(z.string(), z.string()).optional(),
+        timeoutMs: z.number().int().min(0).optional(),
+        retries: z.number().int().min(1).optional(),
+        backoffMs: z.number().int().min(0).optional(),
+        includeServerEvents: z.boolean().optional(),
+      }),
+    )
+    .default([]),
+});
 
-  @IsArray()
-  @IsString({ each: true })
-  events!: string[];
-
-  @IsUrl({ require_tld: false })
-  url!: string;
-
-  @IsOptional()
-  @IsString()
-  method?: string;
-
-  @IsOptional()
-  @IsObject()
-  headers?: Record<string, string>;
-
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  timeoutMs?: number;
-
-  @IsOptional()
-  @IsInt()
-  @Min(1)
-  retries?: number;
-
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  backoffMs?: number;
-
-  @IsOptional()
-  @IsBoolean()
-  includeServerEvents?: boolean;
-}
-
-export class WebhookConfigDto {
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => WebhookDefinitionDto)
-  webhooks: WebhookDefinitionDto[] = [];
-}
+export type WebhookDefinitionDto = z.infer<typeof WebhookConfigSchema>['webhooks'][number];
