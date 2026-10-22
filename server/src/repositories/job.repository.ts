@@ -201,18 +201,18 @@ export class JobRepository {
     }
 
     const promises = [];
-    const itemsByQueue = {} as Record<string, (JobItem & { data: any; options: JobsOptions | undefined })[]>;
+    const itemsByQueue = {} as Record<string, (JobItem & { data: any; opts: JobsOptions | undefined })[]>;
     for (const item of items) {
       const queueName = this.getQueueName(item.name);
       const job = {
         name: item.name,
         data: item.data || {},
-        options: this.getJobOptions(item) || undefined,
-      } as JobItem & { data: any; options: JobsOptions | undefined };
+        opts: this.getJobOptions(item) || undefined,
+      } as JobItem & { data: any; opts: JobsOptions | undefined };
 
-      if (job.options?.jobId || job.options?.deduplication) {
+      if (job.opts?.jobId || job.opts?.deduplication) {
         // need to use add() instead of addBulk() for jobId/deduplication to take effect
-        promises.push(this.getQueue(queueName).add(item.name, item.data, job.options));
+        promises.push(this.getQueue(queueName).add(item.name, item.data, job.opts));
       } else {
         itemsByQueue[queueName] ||= [];
         itemsByQueue[queueName].push(job);

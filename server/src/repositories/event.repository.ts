@@ -237,7 +237,10 @@ export class EventRepository {
   }
 
   private addHandler<T extends EmitEvent>(item: Item<T>): void {
-    const handlers = (this.emitHandlers[item.event] ||= []) as Array<Item<T>>;
+    if (!Object.hasOwn(this.emitHandlers, item.event)) {
+      this.emitHandlers[item.event] = [];
+    }
+    const handlers = this.emitHandlers[item.event] as Array<Item<T>>;
     const index = handlers.findIndex((existing) => existing.priority > item.priority);
     if (index === -1) {
       handlers.push(item);
