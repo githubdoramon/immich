@@ -20,6 +20,33 @@ describe(JobService.name, () => {
   });
 
   describe('onJobRun', () => {
+    it('rejects failed webhook deliveries so the worker applies its retry policy', async () => {
+      const job: JobItem = {
+        name: JobName.WebhookDelivery,
+        data: {
+          webhook: {
+            id: 'people',
+            url: 'http://automation/hooks?secret=url-secret',
+            method: 'POST',
+            headers: { Authorization: 'Bearer header-secret', 'X-Webhook-Secret': 'hook-secret' },
+            timeout: 1000,
+            retries: 3,
+            backoffMs: 100,
+          },
+          eventName: 'PersonCreate',
+          payload: {},
+          timestamp: '2026-10-22T08:00:00Z',
+          deliveryId: 'delivery-id',
+        },
+      };
+      const error = new Error('Delivery failed');
+      mocks.job.run.mockRejectedValue(error);
+      await expect(sut.onJobRun(QueueName.BackgroundTask, job)).rejects.toBe(error);
+      expect(mocks.event.emit).toHaveBeenCalledWith('JobError', { job, error });
+      expect(mocks.event.emit).toHaveBeenCalledWith('JobComplete', QueueName.BackgroundTask, job);
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('JobSuccess', expect.anything());
+    });
+
     it('should queue metadata extraction when sidecar discovery is skipped', async () => {
       const job: JobItem = { name: JobName.SidecarCheck, data: { id: 'asset-1', source: 'upload' } };
       mocks.job.run.mockResolvedValue(JobStatus.Skipped);

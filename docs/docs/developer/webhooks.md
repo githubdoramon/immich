@@ -87,3 +87,8 @@ upstream's database migration. Sharing projections (`otherPeople`, `sharedBy`,
 The configuration format is unchanged. HTTP and HTTPS endpoints without a top-level
 domain remain supported, including Docker service names. Headers must have string
 values. See [custom fork maintenance](./custom-fork.md) for upgrade and deployment details.
+
+Webhook delivery jobs are excluded from job lifecycle subscriptions (`JobRun`,
+`JobStart`, `JobComplete`, `JobSuccess`, `JobError`) so they cannot trigger themselves.
+Failure logs include delivery identifiers but omit headers, destination URLs and
+response bodies. Delivery failures are passed to BullMQ for the configured retry policy.

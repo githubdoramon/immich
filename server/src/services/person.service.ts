@@ -182,6 +182,7 @@ export class PersonService extends BaseService {
         const matches = await this.searchRepository.searchFaces({
           clusterGroupId: user.clusterGroupId,
           ownerId: auth.user.id,
+          includeLocked: auth.session?.hasElevatedPermission ?? false,
           embedding: face.embedding,
           numResults: 1,
           maxDistance: machineLearning.facialRecognition.maxDistance,

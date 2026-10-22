@@ -1,3 +1,4 @@
+import type { JobItem } from 'src/types.js';
 import { AdminConfigDto, SystemConfig, defaults } from 'src/dtos/config.dto.js';
 import { AssetFileType, JobName, JobStatus, UserMetadataKey } from 'src/enum.js';
 import { NotificationService } from 'src/services/notification.service.js';
@@ -59,6 +60,34 @@ describe(NotificationService.name, () => {
 
   it('should work', () => {
     expect(sut).toBeDefined();
+  });
+
+  it('logs webhook failure identifiers without credentials, URL secrets or payload', async () => {
+    mocks.user.getAdmin.mockResolvedValue(UserFactory.create({ isAdmin: true }));
+    const job: JobItem = {
+      name: JobName.WebhookDelivery,
+      data: {
+        webhook: {
+          id: 'people',
+          url: 'http://automation/hooks?secret=url-secret',
+          method: 'POST',
+          headers: { Authorization: 'Bearer header-secret', 'X-Webhook-Secret': 'hook-secret' },
+          timeout: 1000,
+          retries: 3,
+          backoffMs: 100,
+        },
+        eventName: 'PersonCreate',
+        payload: {},
+        timestamp: '2026-10-22T08:00:00Z',
+        deliveryId: 'delivery-id',
+      },
+    };
+    await sut.onJobError({ job, error: new Error('Webhook people responded with 503') });
+    const logged = JSON.stringify(mocks.logger.error.mock.calls);
+    expect(logged).toContain('delivery-id');
+    for (const secret of ['header-secret', 'hook-secret', 'url-secret']) {
+      expect(logged).not.toContain(secret);
+    }
   });
 
   describe('onConfigUpdate', () => {

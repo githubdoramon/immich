@@ -80,6 +80,21 @@ describe(PersonService.name, () => {
       expect(mocks.storage.unlink).toHaveBeenCalledWith(file.path);
     });
 
+    it.each([false, true])(
+      'uses session elevation to control locked candidates (%s)',
+      async (hasElevatedPermission) => {
+        const user = UserFactory.create();
+        const auth = AuthFactory.from(user).session({ hasElevatedPermission }).build();
+        mocks.user.get.mockResolvedValue(user);
+        mocks.machineLearning.detectFaces.mockResolvedValue({ imageWidth: 100, imageHeight: 200, faces: [face] });
+        mocks.search.searchFaces.mockResolvedValue([]);
+        await sut.identifyFaces(auth, file);
+        expect(mocks.search.searchFaces).toHaveBeenCalledWith(
+          expect.objectContaining({ includeLocked: hasElevatedPermission }),
+        );
+      },
+    );
+
     it('does not return a person belonging to another user', async () => {
       const user = UserFactory.create();
       const person = PersonFactory.create();

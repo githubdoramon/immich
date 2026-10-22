@@ -168,6 +168,7 @@ export type LargeAssetSearchOptions = AssetSearchOptions & { minFileSize?: numbe
 export interface FaceEmbeddingSearch extends Omit<SearchEmbeddingOptions, 'userIds'> {
   clusterGroupId: string;
   ownerId?: string;
+  includeLocked?: boolean;
   hasPerson?: boolean;
   numResults: number;
   maxDistance: number;
@@ -357,6 +358,7 @@ export class SearchRepository {
   searchFaces({
     clusterGroupId,
     ownerId,
+    includeLocked,
     embedding,
     numResults,
     maxDistance,
@@ -385,6 +387,7 @@ export class SearchRepository {
             )
             .where('asset.deletedAt', 'is', null)
             .$if(!!ownerId, (qb) => qb.where('asset.ownerId', '=', ownerId!))
+            .$if(includeLocked === false, (qb) => qb.where('asset.visibility', '!=', AssetVisibility.Locked))
             .$if(!!hasPerson, (qb) => qb.where('asset_face.personGroupId', 'is not', null))
             .$if(!!minBirthDate, (qb) =>
               qb.where((eb) =>

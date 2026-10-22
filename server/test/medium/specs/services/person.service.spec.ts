@@ -3,7 +3,7 @@ import { Kysely } from 'kysely';
 import { DateTime } from 'luxon';
 import { AssetEditAction, MirrorAxis } from 'src/dtos/editing.dto.js';
 import { AssetFaceCreateDto, PersonSearchDto, PersonUserRole } from 'src/dtos/person.dto.js';
-import { AssetFileType, JobName } from 'src/enum.js';
+import { AssetFileType, AssetVisibility, JobName } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
@@ -122,6 +122,30 @@ describe(PersonService.name, () => {
           actorId: user.id,
         }),
       );
+    });
+
+    it('requires an elevated session to identify a person found only in locked assets', async () => {
+      const { ctx, sut } = setup(await getKyselyDB());
+      const { user } = await ctx.newUser();
+      const { person } = await ctx.newPerson({ ownerId: user.id });
+      const { asset } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Locked });
+      const { assetFace } = await ctx.newAssetFace({ assetId: asset.id, personGroupId: person.personGroupId });
+      const embedding = JSON.stringify(Array.from({ length: 512 }, (_, index) => (index === 0 ? 1 : 0)));
+      await ctx.database.insertInto('face_search').values({ faceId: assetFace.id, embedding }).execute();
+      ctx.getMock(MachineLearningRepository).detectFaces.mockResolvedValue({
+        imageHeight: 200,
+        imageWidth: 100,
+        faces: [{ embedding, score: 0.99, boundingBox: { x1: 10, x2: 50, y1: 20, y2: 60 } }],
+      });
+      ctx.getMock(StorageRepository).unlink.mockResolvedValue();
+      const file = { path: '/tmp/identify-locked.jpg' } as Express.Multer.File;
+      const ordinary = await sut.identifyFaces(factory.auth({ user }), file);
+      expect(ordinary[0].personId).toBeNull();
+      const elevated = await sut.identifyFaces(
+        factory.auth({ user, session: { id: newUuid(), hasElevatedPermission: true } }),
+        file,
+      );
+      expect(elevated[0].personId).toBe(person.personGroupId);
     });
 
     it("identifies only the caller's faces even if another cluster member has a closer match", async () => {

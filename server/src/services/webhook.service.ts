@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import process from 'node:process';
-import type { IWebhookJob } from 'src/types.js';
+import type { IWebhookJob, JobItem } from 'src/types.js';
 import { WEBHOOK_DEFAULT_BACKOFF_MS, WEBHOOK_DEFAULT_RETRIES, WEBHOOK_DEFAULT_TIMEOUT_MS } from 'src/constants.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { WebhookConfigSchema, type WebhookDefinitionDto } from 'src/dtos/webhook-config.dto.js';
@@ -57,6 +57,7 @@ export class WebhookService {
     const controller = new AbortController();
     const timeoutHandle = setTimeout(() => controller.abort(), webhook.timeout);
 
+    let status: number | undefined;
     try {
       const headers = this.buildHeaders(webhook.headers, eventName, timestamp, deliveryId);
       const body = JSON.stringify({
@@ -73,17 +74,18 @@ export class WebhookService {
         signal: controller.signal,
       });
 
+      status = response.status;
       if (!response.ok) {
-        const text = await response.text();
-        throw new Error(
-          `Webhook ${webhook.id} (${webhook.url}) responded with ${response.status}: ${text || response.statusText}`,
-        );
+        throw new Error(`Webhook ${webhook.id} responded with ${response.status}`);
       }
 
       this.logger.debug(`Delivered webhook ${webhook.id} (${eventName})`);
       return JobStatus.Success;
-    } catch (error) {
-      this.logger.warn(`Failed to deliver webhook ${webhook.id}: ${error instanceof Error ? error.message : error}`);
+    } catch {
+      // Destinations and their error messages can contain tokens or echo request headers.
+      const reason = controller.signal.aborted ? 'timed out' : status ? `responded with ${status}` : 'failed';
+      const error = new Error(`Webhook ${webhook.id} ${reason}`);
+      this.logger.warn(error.message);
       throw error;
     } finally {
       clearTimeout(timeoutHandle);
@@ -194,6 +196,15 @@ export class WebhookService {
     for (const webhook of this.webhooks) {
       for (const event of webhook.events) {
         const handler: EmitHandler<EmitEvent> = async (...args: unknown[]) => {
+          let job: JobItem | undefined;
+          if (['JobRun', 'JobStart', 'JobComplete'].includes(event)) {
+            job = args[1] as JobItem | undefined;
+          } else if (event === 'JobSuccess' || event === 'JobError') {
+            job = (args[0] as { job: JobItem } | undefined)?.job;
+          }
+          if (job?.name === JobName.WebhookDelivery) {
+            return;
+          }
           await this.queueDelivery(webhook, event, args);
         };
         this.eventRepository.addListener(event, handler, {

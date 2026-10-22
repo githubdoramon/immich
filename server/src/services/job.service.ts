@@ -93,6 +93,9 @@ export class JobService extends BaseService {
       }
     } catch (error: Error | any) {
       await this.eventRepository.emit('JobError', { job, error });
+      if (job.name === JobName.WebhookDelivery) {
+        throw error;
+      }
     } finally {
       await this.eventRepository.emit('JobComplete', queueName, job);
     }

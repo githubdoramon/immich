@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { IWebhookJob } from 'src/types.js';
-import { JobName, JobStatus } from 'src/enum.js';
+import { JobName, JobStatus, QueueName } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -110,6 +110,29 @@ describe(WebhookService.name, () => {
     expect(mocks.logger.error).toHaveBeenCalled();
   });
 
+  it('ignores delivery jobs in all job lifecycle subscriptions to prevent recursive delivery', async () => {
+    await configure([{ ...target, events: ['JobRun', 'JobStart', 'JobComplete', 'JobSuccess', 'JobError'] }]);
+    const delivery = { name: JobName.WebhookDelivery, data: job() } as const;
+    for (const event of ['JobRun', 'JobStart', 'JobComplete'] as const) {
+      await events.emit(event, QueueName.BackgroundTask, delivery);
+    }
+    await events.emit('JobSuccess', { job: delivery, response: JobStatus.Success });
+    await events.emit('JobError', { job: delivery, error: new Error('Delivery failed') });
+    expect(mocks.job.queue).not.toHaveBeenCalled();
+    await events.emit('JobStart', QueueName.BackgroundTask, { name: JobName.PersonCleanup });
+    expect(mocks.job.queue).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not include endpoint credentials or response bodies in failure messages', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('header-secret', { status: 503 })));
+    const data = job();
+    data.webhook.url = 'http://automation/hooks?token=url-secret';
+    await expect(sut.handleWebhookDelivery(data)).rejects.toThrow('Webhook people responded with 503');
+    const logged = JSON.stringify(mocks.logger.warn.mock.calls);
+    expect(logged).not.toContain('header-secret');
+    expect(logged).not.toContain('url-secret');
+  });
+
   it('delivers the envelope and default headers', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
     vi.stubGlobal('fetch', fetchMock);
@@ -154,6 +177,12 @@ describe(WebhookService.name, () => {
     await expect(sut.handleWebhookDelivery(job())).rejects.toThrow('503');
   });
 
+  it('sanitizes errors from the HTTP client before job failure logging', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Bad URL https://user:url-secret@automation/hooks')));
+    await expect(sut.handleWebhookDelivery(job())).rejects.toThrow('Webhook people failed');
+    expect(JSON.stringify(mocks.logger.warn.mock.calls)).not.toContain('url-secret');
+  });
+
   it('aborts timed out deliveries so BullMQ can retry', async () => {
     vi.useFakeTimers();
     vi.stubGlobal(
@@ -165,7 +194,7 @@ describe(WebhookService.name, () => {
           }),
       ),
     );
-    const result = expect(sut.handleWebhookDelivery(job())).rejects.toThrow('Aborted');
+    const result = expect(sut.handleWebhookDelivery(job())).rejects.toThrow('timed out');
     await vi.advanceTimersByTimeAsync(101);
     await result;
   });

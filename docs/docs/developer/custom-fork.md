@@ -13,12 +13,15 @@ database migrations, API clients, web, mobile, CLI and machine learning advance 
 
 - [Webhooks](./webhooks.md): `IMMICH_WEBHOOKS_CONFIG`, dynamic event listeners,
   background delivery jobs, configurable headers, timeouts and exponential retry.
+  Delivery failures propagate to BullMQ; webhook jobs are excluded from job-event
+  subscriptions to prevent recursive delivery. Failure logs omit webhook credentials.
 - Person create/update/delete notifications from API actions, recognition, imported
   metadata, thumbnail changes, migration, cleanup and merges.
 - `POST /api/faces/identify`: multipart `file`, authenticated with `face.read`,
   returning detected bounds, image dimensions and `personId`, without names or
   person details. Matching remains limited to assets owned by the caller, even
-  when other users share a cluster group. Files are limited to 20 MiB and removed
+  when other users share a cluster group. Locked assets are included only with an
+  elevated session. Files are limited to 20 MiB and removed
   after processing, including disabled recognition and ML errors.
 - `linux/amd64` builds in `docker/docker-compose.prod.yml` for server and ML.
 
