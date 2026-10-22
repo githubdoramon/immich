@@ -1,10 +1,35 @@
 # Fork image publishing
 
-`build-docker-images.yml` is the only active workflow for this fork. Like Digital
+`build-docker-images.yml` is the only workflow defined on `custom`. Like Digital
 Brain, it configures AWS access-key credentials, logs in to ECR, and uses Docker
-Buildx with GitHub Actions caching. Every push to `main` builds both images.
-Manual runs also build both images and must select `main`. Pull requests and
+Buildx with GitHub Actions caching. Every push to `custom` builds both images.
+Manual runs also build both images and must select `custom`. Pull requests and
 other branches cannot publish images.
+
+## Branch layout and inherited workflows
+
+- `main` mirrors unmodified upstream releases, currently v3.3.5.
+- `custom` contains our extensions, upstream integrations and ECR publishing.
+- Keep `custom` as GitHub's default branch so manual builds use this workflow.
+
+The archived upstream workflows are removed from `custom`, but clean `main`
+still contains upstream's original workflow files. Disable those workflows once
+in GitHub Actions so future updates to `main` do not run upstream publishing,
+mobile, docs, tests or maintenance jobs. Leave this ECR workflow enabled.
+
+Before pushing the restored clean `main`, disable the inherited workflows in the
+Actions UI, or run this from an authenticated GitHub CLI:
+
+```sh
+gh api --paginate repos/githubdoramon/immich/actions/workflows \
+  --jq '.workflows[] | select(.path != ".github/workflows/build-docker-images.yml") | .id' \
+  | while read -r workflow_id; do
+      gh workflow disable "$workflow_id" --repo githubdoramon/immich
+    done
+```
+
+This changes workflow settings, not the upstream files on `main`. If future
+upstream releases introduce new workflow paths, disable those as well.
 
 ## AWS setup
 
@@ -49,7 +74,7 @@ ecr:CompleteLayerUpload
 ecr:PutImage
 ```
 
-Repositories must allow the moving tags `latest` and `main` to be updated.
+Repositories must allow the moving tags `latest` and `custom` to be updated.
 Each build also publishes `commit-<full-git-sha>` for a fixed deployment reference.
 Use an ECR lifecycle policy for retention; the workflow does not delete older
 images or untagged manifest data.
@@ -74,14 +99,7 @@ the deployment host to ECR before pulling. Follow the
 [upgrade notes](../../docs/docs/developer/custom-fork.md#deploying-this-integration)
 before updating the running application or database.
 
-Upstream CI is preserved in [`.github/upstream-workflows`](../upstream-workflows).
-Keep `main` as the repository's default branch so manual dispatch uses this
-workflow and scheduled workflows are not read from the old `custom` branch.
-After pushing this change, switch the default branch in Settings → General →
-Default branch, or run:
-
-```sh
-gh repo edit githubdoramon/immich --default-branch main
-```
-
-Newly introduced upstream workflows must be archived during future merges.
+Upstream CI is preserved in [`.github/upstream-workflows`](../upstream-workflows)
+on `custom`, as well as in its original location on clean `main`. During future
+integrations, keep new upstream workflow files out of `.github/workflows` on
+`custom` and disable their workflow registrations in GitHub.

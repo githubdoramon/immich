@@ -32,10 +32,12 @@ implementation during an earlier integration. This upgrade restores it.
 ## Image CI
 
 The fork's only active GitHub Actions workflow builds the server and CPU ML images
-for `linux/amd64` and publishes them to AWS ECR on pushes to `main`. See the
-[workflow setup](https://github.com/githubdoramon/immich/blob/main/.github/workflows/README.md)
+for `linux/amd64` and publishes them to AWS ECR on pushes to `custom`. See the
+[workflow setup](https://github.com/githubdoramon/immich/blob/custom/.github/workflows/README.md)
 for AWS secrets, repository names, tags and deployment references. Upstream
-workflows are preserved in `.github/upstream-workflows` and do not run.
+workflows are preserved in `.github/upstream-workflows` on `custom`. Disable the
+inherited workflow registrations in GitHub so they also stay inactive when clean
+`main` is updated.
 
 ## Person identity compatibility
 
@@ -77,9 +79,13 @@ do not establish live inference or production delivery.
 
 ## Future integrations
 
-Merge the selected upstream release into a branch from `main`, resolve changes
-to these extensions using the new upstream APIs, then inspect `git diff <tag>` to
-keep the custom surface small. Run server type checking, lint, formatting, unit
+Keep `main` as an unmodified upstream mirror and `custom` as the default branch
+containing our extensions and publishing workflow. Fast-forward `main` to the
+selected upstream release, then merge `main` into an integration branch created
+from `custom`. Resolve changes to these extensions using the new upstream APIs,
+then inspect `git diff <tag>` to keep the custom surface small. Merge the reviewed
+integration back into `custom`; custom changes must not be merged into `main`.
+Run server type checking, lint, formatting, unit
 and relevant database integration tests. Rebuild the SDK and plugin SDK before
 the server. Regenerate OpenAPI and the TypeScript/Dart clients after API changes
 using the tasks in `mise.toml`.

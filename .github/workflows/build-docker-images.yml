@@ -2,7 +2,7 @@ name: Build and Publish ECR Images
 
 on:
   push:
-    branches: [main]
+    branches: [custom]
   workflow_dispatch:
 
 permissions:
@@ -10,7 +10,7 @@ permissions:
 
 # Finish each pair of images before another run updates the moving tags.
 concurrency:
-  group: ecr-images-main
+  group: ecr-images-custom
   cancel-in-progress: false
 
 env:
@@ -19,7 +19,7 @@ env:
 jobs:
   build:
     name: Build ${{ matrix.image }}
-    if: github.repository == 'githubdoramon/immich' && github.ref == 'refs/heads/main'
+    if: github.repository == 'githubdoramon/immich' && github.ref == 'refs/heads/custom'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
@@ -94,7 +94,7 @@ jobs:
           images: ${{ steps.login-ecr.outputs.registry }}/${{ matrix.repository }}
           tags: |
             type=raw,value=latest
-            type=raw,value=main
+            type=raw,value=custom
             type=sha,format=long,prefix=commit-
 
       - name: Build and push Docker image
@@ -125,7 +125,7 @@ jobs:
             echo "### Published ${ECR_REPOSITORY}"
             echo
             echo "- Image: \`${IMAGE}:commit-${GITHUB_SHA}\`"
-            echo "- Moving tags: \`latest\`, \`main\`"
+            echo "- Moving tags: \`latest\`, \`custom\`"
             echo "- Digest: \`${DIGEST}\`"
             echo "- Platform: \`linux/amd64\` (CPU)"
           } >> "$GITHUB_STEP_SUMMARY"
