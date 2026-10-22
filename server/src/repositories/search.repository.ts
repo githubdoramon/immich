@@ -389,6 +389,17 @@ export class SearchRepository {
             )
             .where('asset.deletedAt', 'is', null)
             .$if(!!ownerId, (qb) => qb.where('asset.ownerId', '=', ownerId!))
+            .$if(!!ownerId && !!hasPerson, (qb) =>
+              qb.where((eb) =>
+                eb.exists(
+                  eb
+                    .selectFrom('person')
+                    .select('person.personGroupId')
+                    .whereRef('person.personGroupId', '=', 'asset_face.personGroupId')
+                    .where('person.ownerId', '=', ownerId!),
+                ),
+              ),
+            )
             .$if(includeLocked === false, (qb) => qb.where('asset.visibility', '!=', AssetVisibility.Locked))
             .$if(!!excludeDeletedFaces, (qb) => qb.where('asset_face.deletedAt', 'is', null))
             .$if(!!hasPerson, (qb) => qb.where('asset_face.personGroupId', 'is not', null))

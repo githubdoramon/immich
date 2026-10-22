@@ -187,7 +187,7 @@ describe(PersonService.name, () => {
       expect(elevated[0].personId).toBe(person.personGroupId);
     });
 
-    it("identifies only the caller's faces even if another cluster member has a closer match", async () => {
+    it('skips closer matches from other users and groups without an owner person record', async () => {
       const { ctx, sut } = setup(await getKyselyDB());
       const { user } = await ctx.newUser();
       const { user: other } = await ctx.newUser({ clusterGroupId: user.clusterGroupId });
@@ -203,6 +203,12 @@ describe(PersonService.name, () => {
         assetId: otherAsset.id,
         personGroupId: otherPerson.personGroupId,
       });
+      const { assetFace: withoutOwnerPerson } = await ctx.newAssetFace({
+        assetId: ownAsset.id,
+        personGroupId: otherPerson.personGroupId,
+      });
+      await ctx.newPerson({ ownerId: user.id, personGroupId: otherPerson.personGroupId });
+      await ctx.get(PersonRepository).delete([otherPerson.personGroupId], user.id);
       const vector = Array.from({ length: 512 }, (_, index) => (index === 0 ? 1 : 0));
       const query = JSON.stringify(vector);
       const own = JSON.stringify(vector.map((value, index) => (index === 1 ? 0.1 : value)));
@@ -211,6 +217,7 @@ describe(PersonService.name, () => {
         .values([
           { faceId: ownFace.id, embedding: own },
           { faceId: otherFace.id, embedding: query },
+          { faceId: withoutOwnerPerson.id, embedding: query },
         ])
         .execute();
       ctx.getMock(MachineLearningRepository).detectFaces.mockResolvedValue({
